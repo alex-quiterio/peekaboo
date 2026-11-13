@@ -41,3 +41,7 @@ bun run check   # typecheck, lint (layer rules), tests
 ```
 
 The code is layered `apps -> infrastructure -> application -> domain`; see `CLAUDE.md`.
+
+## Licence
+
+MIT. See `LICENSE`.

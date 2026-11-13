@@ -2,6 +2,7 @@
   "name": "isp-visibility-checker",
   "version": "1.0.0",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "description": "A read-only, privacy-conscious home gateway audit with a CLI and a local dashboard",
   "scripts": {
