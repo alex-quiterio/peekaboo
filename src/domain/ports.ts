@@ -4,6 +4,7 @@ import type { NeighbourObservation, SelfObservation } from "./devices.ts";
 import type { EnvironmentObservation, HopObservation, UpnpObservation, WifiObservation } from "./evidence.ts";
 import type { DefaultRoute } from "./gateway.ts";
 import type { Report } from "./model.ts";
+import type { SavedReport } from "./saved.ts";
 
 export interface GatewayLocator {
   /** The operating system's default route, unvalidated. */
@@ -52,4 +53,14 @@ export interface ReportRepository {
   previous(): Promise<Report | null>;
   /** Stores the report as latest; the old latest becomes previous. */
   save(report: Report): Promise<void>;
+}
+
+/** Reports the user chose to keep under a name. Written only when the user asks to save. */
+export interface SavedReportStore {
+  list(): Promise<SavedReport[]>;
+  get(label: string): Promise<SavedReport | null>;
+  /** Replaces any saved report with the same label. */
+  save(saved: SavedReport): Promise<void>;
+  /** Returns false when there was nothing to remove. */
+  remove(label: string): Promise<boolean>;
 }

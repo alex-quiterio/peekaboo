@@ -1,4 +1,5 @@
 node_modules/
 sanitized-report.json
+saved-reports/
 previous-sanitized-report.json
 .DS_Store

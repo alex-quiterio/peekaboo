@@ -1,0 +1,55 @@
+/* Saved reports: the name box, the saved list and the side-by-side comparison. */
+.save-form { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 14px; }
+.save-form input[type="text"], .pickers select {
+  min-width: 0;
+  padding: 8px 10px;
+  font: inherit;
+  color: var(--ink);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+.save-form input[type="text"] { flex: 1 1 240px; }
+.save-form input[type="text"]:focus-visible, .pickers select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.save-form .notice { flex-basis: 100%; }
+
+.saved-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 0;
+  border-top: 1px solid var(--line);
+}
+.saved-name { display: flex; flex-direction: column; min-width: 0; }
+.saved-actions { display: flex; gap: 8px; }
+button.danger { color: var(--high); border-color: var(--high); }
+
+.pickers { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; margin-bottom: 14px; }
+.pickers select { flex: 1 1 160px; }
+
+/* One row per measure: the label, then the two reports' values in matching columns. */
+.cmp-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr) minmax(0, 1fr);
+  gap: 4px 14px;
+  padding: 8px 0;
+  border-top: 1px solid var(--line);
+}
+.cmp-head { border-top: 0; color: var(--muted); font-size: 12px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; }
+.cmp-label { color: var(--muted); }
+.cell { font-variant-numeric: tabular-nums; }
+.cell.better { color: var(--accent); font-weight: 700; text-shadow: var(--glow); }
+
+.only { margin-top: 16px; }
+.only ul { margin: 0; padding-left: 18px; color: var(--muted); }
+
+@media (max-width: 720px) {
+  .saved-actions { width: 100%; }
+  .saved-actions button { flex: 1; }
+  /* The label takes its own line; the two values sit side by side beneath it. */
+  .cmp-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .cmp-label { grid-column: 1 / -1; }
+  .cmp-head div:first-child { display: none; }
+}

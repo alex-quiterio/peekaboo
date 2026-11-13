@@ -2,9 +2,11 @@ import { describe, expect, test } from "bun:test";
 import { NO_DEVICE } from "@domain/evidence.ts";
 import { SafetyStop } from "@domain/gateway.ts";
 import type { Report } from "@domain/model.ts";
-import type { ReportRepository } from "@domain/ports.ts";
+import type { ReportRepository, SavedReportStore } from "@domain/ports.ts";
+import { labelKey, MAX_SAVED_REPORTS, type SavedReport } from "@domain/saved.ts";
 import { AUDITED_PORTS } from "@domain/scoring.ts";
 import { RunAudit, type AuditDependencies } from "./run-audit.ts";
+import { CURRENT_AUDIT, SavedReports } from "./saved-reports.ts";
 import { WatchSession } from "./watch-session.ts";
 
 class MemoryReports implements ReportRepository {
@@ -159,6 +161,99 @@ describe("ISP delay", () => {
     const report = await nested.audit.execute("unknown", { ispLatency: true });
     expect(asked).toEqual([1, 2, 3]);
     expect(report.checks.latency).toMatchObject({ ispMs: 30, ownHops: 2 });
+  });
+});
+
+class MemorySaved implements SavedReportStore {
+  files = new Map<string, SavedReport>();
+  async list() {
+    return [...this.files.values()];
+  }
+  async get(label: string) {
+    return this.files.get(labelKey(label)) ?? null;
+  }
+  async save(saved: SavedReport) {
+    this.files.set(labelKey(saved.label), saved);
+  }
+  async remove(label: string) {
+    return this.files.delete(labelKey(label));
+  }
+}
+
+describe("SavedReports", () => {
+  function setup() {
+    const { audit, reports } = harness();
+    const store = new MemorySaved();
+    return { audit, reports, store, saved: new SavedReports({ store, reports }) };
+  }
+
+  test("nothing is saved by auditing, only by asking", async () => {
+    const { audit, store } = setup();
+    await audit.execute("unknown");
+    expect(store.files.size).toBe(0);
+  });
+
+  test("saves the latest audit under a name, and saving again under that name replaces it", async () => {
+    const { audit, saved, store } = setup();
+    await audit.execute("unknown");
+    expect((await saved.saveCurrent("Home")).label).toBe("Home");
+    await audit.execute("encrypted");
+    await saved.saveCurrent("home");
+    expect(store.files.size).toBe(1);
+    expect((await saved.list())[0]?.label).toBe("home");
+  });
+
+  test("refuses to save before any audit, with a bad name, or past the limit", async () => {
+    const { audit, saved, store } = setup();
+    expect(saved.saveCurrent("Home")).rejects.toBeInstanceOf(SafetyStop);
+    await audit.execute("unknown");
+    expect(saved.saveCurrent("../x")).rejects.toBeInstanceOf(SafetyStop);
+    for (let i = 0; i < MAX_SAVED_REPORTS; i += 1) await saved.saveCurrent(`Report ${i}`);
+    expect(saved.saveCurrent("One too many")).rejects.toBeInstanceOf(SafetyStop);
+    await saved.saveCurrent("report 3"); // replacing is still allowed at the limit
+    expect(store.files.size).toBe(MAX_SAVED_REPORTS);
+  });
+
+  test("saved reports hold no full address", async () => {
+    const { audit, saved, store } = setup();
+    await audit.execute("unknown", { ispLatency: true });
+    await saved.saveCurrent("Home");
+    expect(JSON.stringify([...store.files.values()])).not.toMatch(/192\.168\.1\.1|203\.0\.113/);
+  });
+
+  test("compares the current audit with a saved one, or two saved ones", async () => {
+    const { audit, saved } = setup();
+    await audit.execute("plaintext");
+    await saved.saveCurrent("Office");
+    await audit.execute("encrypted");
+    await saved.saveCurrent("Home");
+
+    const against = await saved.compare(undefined, "Office");
+    expect([against.left.name, against.right.name]).toEqual([CURRENT_AUDIT, "Office"]);
+    expect(against.rows.find((r) => r.id === "dns")).toMatchObject({ left: "encrypted", right: "plaintext", better: "left" });
+
+    const two = await saved.compare("Office", "Home");
+    expect([two.left.name, two.right.name]).toEqual(["Office", "Home"]);
+    expect(two.rows.find((r) => r.id === "dns")?.better).toBe("right");
+  });
+
+  test("refuses to compare a report with itself, or with one that does not exist", async () => {
+    const { audit, saved } = setup();
+    expect(saved.compare(undefined, "Nope")).rejects.toBeInstanceOf(SafetyStop); // no audit yet
+    await audit.execute("unknown");
+    await saved.saveCurrent("Home");
+    expect(saved.compare("Home", "home")).rejects.toBeInstanceOf(SafetyStop);
+    expect(saved.compare(undefined, undefined)).rejects.toBeInstanceOf(SafetyStop);
+    expect(saved.compare(undefined, "Nope")).rejects.toBeInstanceOf(SafetyStop);
+  });
+
+  test("deleting removes it, and deleting what is not there says so", async () => {
+    const { audit, saved } = setup();
+    await audit.execute("unknown");
+    await saved.saveCurrent("Home");
+    await saved.remove("Home");
+    expect(await saved.list()).toEqual([]);
+    expect(saved.remove("Home")).rejects.toBeInstanceOf(SafetyStop);
   });
 });
 

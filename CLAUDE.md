@@ -14,7 +14,7 @@ A read-only, privacy-conscious audit of a home network the user owns or administ
 - Never look up the public IP, geolocate anything, or contact a third-party service.
 - UPnP code may call only `getGateway()` and `getMappings()`. It must never create or delete mappings, call external-IP or connection-control methods, or change router configuration.
 - Never print or save SSIDs, BSSIDs, MAC addresses, device names, raw UPnP descriptions, resolver addresses, or complete private IPs.
-- Save only `sanitized-report.json` and `previous-sanitized-report.json`.
+- Save only `sanitized-report.json` and `previous-sanitized-report.json`, plus named reports the user explicitly asks to keep (`--save`, `cli:reports save`, the dashboard's Save button) as one file each under `saved-reports/`. Nothing saves a named report on its own. A saved report is exactly the sanitized report, and its name is the only text the user adds: `parseLabel` limits it to short plain text, and file names come only from `labelKey`, never from the raw name. The store reads only files it could have written, and only ones shaped like a report. Comparing reads saved reports and sends nothing.
 - Never label a locally reachable router port as internet-exposed.
 - Return "Unknown" when evidence is incomplete.
 - The web server binds to 127.0.0.1 only and serves only the files under `src/apps/web/public`.
@@ -35,6 +35,7 @@ Dashboard CSS lives in `src/apps/web/public/styles`, one file per concern; colou
 ## Commands
 
 - `bun run cli:scan --dns encrypted|plaintext|unknown [--isp-latency]` runs one audit (`--dns` defaults to `unknown`). About 20 seconds.
+- `bun run cli:reports` lists saved reports; `cli:reports save "Home"` keeps the latest audit under a name; `cli:reports compare "Office"` compares the latest audit with it, and `compare "Office" "Home"` compares two saved ones; `cli:reports delete "Home"` removes one. `cli:scan --save "Home"` audits and saves in one step.
 - `bun run cli:watch --dns ...` reruns the audit every 30 minutes and prints only sanitized changes.
 - `bun run web:start` serves the dashboard at http://127.0.0.1:4173 (`web:dev` restarts on change).
 - `bun run check` runs typecheck, lint and tests. Tests use fakes and never touch the network.

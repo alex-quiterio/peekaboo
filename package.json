@@ -8,6 +8,7 @@
   "scripts": {
     "cli:scan": "bun src/apps/cli/scan.ts",
     "cli:watch": "bun src/apps/cli/watch.ts",
+    "cli:reports": "bun src/apps/cli/reports.ts",
     "web:start": "bun src/apps/web/server.ts",
     "web:dev": "bun --watch src/apps/web/server.ts",
     "test": "bun test",

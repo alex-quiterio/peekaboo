@@ -20,6 +20,23 @@ There are two options:
 
 An audit takes about 20 seconds.
 
+## Save and compare
+
+Keep an audit under a name, then compare it with another network, for example your home Wi-Fi with your office Wi-Fi:
+
+```sh
+bun run cli:scan --save "Amsterdam work"      # audit and keep it
+bun run cli:reports                           # list saved reports
+bun run cli:reports compare "Amsterdam work"  # latest audit vs a saved one
+bun run cli:reports compare "Amsterdam work" "Home"   # two saved reports
+bun run cli:reports save "Home"               # keep the latest audit
+bun run cli:reports delete "Home"
+```
+
+The dashboard has the same in its "Saved reports" card. The comparison puts the two reports side by side, marks the better value on each measure (higher link rate, stronger signal, fewer crowded channels, lower delay and so on), and lists problems found on only one of them. Unknown values are never marked as better or worse.
+
+Saved reports are files in `saved-reports/` (not committed). They hold the same sanitized data as the report, so no network names or addresses, plus the name you chose. Saving under a name that exists replaces it.
+
 ## What it checks
 
 | Check | How |
@@ -45,7 +62,7 @@ The score counts only checks that produced evidence. Coverage is reported next t
 - It does not look up your public IP address or where your ISP is located.
 - It stops without scanning if you are on a VPN, because the gateway would not be your router.
 - It does not test the internet side of your router. A port that answers here is reachable from inside your network only.
-- It stores no network names, MAC addresses, device names or full IP addresses. The only files written are `sanitized-report.json` and `previous-sanitized-report.json`.
+- It stores no network names, MAC addresses, device names or full IP addresses. The only files written are `sanitized-report.json`, `previous-sanitized-report.json` and the reports you choose to save under `saved-reports/`.
 
 ## Development
 

@@ -228,6 +228,135 @@ async function listDevices() {
   refresh();
 }
 
+// Saved reports live in files on this computer. The page asks the server to save, list, delete and compare.
+const saved = { list: null, draft: "", busy: false, message: null, error: null, compare: null };
+const CURRENT = ""; // the server reads an empty side as "the most recent audit"
+
+function savedBusy(promise) {
+  saved.busy = true;
+  saved.error = null;
+  saved.message = null;
+  refresh();
+  return promise
+    .catch((err) => { saved.error = err.message; })
+    .finally(() => { saved.busy = false; refresh(); });
+}
+
+function saveCurrent() {
+  const label = saved.draft.trim();
+  return savedBusy(call("/api/saved", { label }).then((list) => {
+    saved.list = list;
+    saved.draft = "";
+    saved.message = `Saved as "${label}".`;
+  }));
+}
+
+function deleteSaved(label) {
+  if (!confirm(`Delete the saved report "${label}"? This cannot be undone.`)) return;
+  savedBusy(call("/api/saved/delete", { label }).then((list) => {
+    saved.list = list;
+    if (saved.compare && (saved.compare.left === label || saved.compare.right === label)) saved.compare = null;
+  }));
+}
+
+function runCompare(left, right) {
+  saved.compare = { left, right, result: null };
+  return savedBusy(call("/api/compare", { left, right }).then((result) => {
+    saved.compare = { left, right, result };
+  }).catch((err) => {
+    saved.compare = { left, right, result: null };
+    throw err;
+  }));
+}
+
+async function loadSaved() {
+  try { saved.list = await call("/api/saved"); } catch (err) { saved.error = err.message; }
+  refresh();
+}
+
+function comparisonCard() {
+  const { left, right, result } = saved.compare;
+  const choices = [[CURRENT, "Current audit"], ...(saved.list || []).map((s) => [s.label, s.label])];
+  const picker = (value, onChange, label) => {
+    const select = h("select", { "aria-label": label }, choices.map(([v, text]) => {
+      const option = h("option", { value: v }, text);
+      if (v === value) option.selected = true;
+      return option;
+    }));
+    select.addEventListener("change", () => onChange(select.value));
+    return select;
+  };
+
+  const cell = (value, better) => h("div", { class: `cell${better ? " better" : ""}` },
+    value === null ? h("span", { class: "muted" }, "Unknown") : value,
+    better ? h("span", { class: "mark", title: "Better", "aria-label": "better" }, " ✓") : null);
+
+  const head = result ? [
+    h("p", { class: "muted lead" },
+      `${result.left.name} is better on ${result.wins.left} measure${result.wins.left === 1 ? "" : "s"}, ` +
+      `${result.right.name} on ${result.wins.right}. Unknown values are never counted, and a tie counts for neither.`),
+    ...result.notes.map((note) => h("p", { class: "notice" }, note)),
+    h("div", { class: "cmp" },
+      h("div", { class: "cmp-row cmp-head" }, h("div", {}), h("div", {}, result.left.name), h("div", {}, result.right.name)),
+      result.rows.map((row) => h("div", { class: "cmp-row" },
+        h("div", { class: "cmp-label" }, row.label),
+        cell(row.left, row.better === "left"), cell(row.right, row.better === "right")))),
+    result.onlyLeft.length || result.onlyRight.length ? h("div", { class: "only" },
+      [[result.left.name, result.onlyLeft], [result.right.name, result.onlyRight]].filter(([, list]) => list.length)
+        .map(([name, list]) => h("div", {}, h("h3", {}, `Only on ${name}`), h("ul", {}, list.map((m) => h("li", {}, m)))))) : null,
+  ] : h("p", { class: "muted" }, saved.error ? "" : "Comparing…");
+
+  const close = h("button", { class: "ghost small", type: "button" }, "Close");
+  close.addEventListener("click", () => { saved.compare = null; refresh(); });
+  return h("section", { class: "card" },
+    h("div", { class: "card-head" }, h("h2", {}, "Comparison"), close),
+    h("div", { class: "pickers" },
+      picker(left, (v) => runCompare(v, saved.compare.right), "First report"),
+      h("span", { class: "muted" }, "against"),
+      picker(right, (v) => runCompare(saved.compare.left, v), "Second report")),
+    head);
+}
+
+function savedCard(report) {
+  const input = h("input", { type: "text", maxlength: "40", placeholder: "Name, for example Home or Amsterdam work", "aria-label": "Name for this report" });
+  input.value = saved.draft;
+  input.addEventListener("input", () => { saved.draft = input.value; button.disabled = saved.busy || !report || !saved.draft.trim(); });
+  input.addEventListener("keydown", (e) => { if (e.key === "Enter" && !button.disabled) saveCurrent(); });
+  const button = h("button", { type: "button" }, "Save this audit");
+  button.disabled = saved.busy || !report || !saved.draft.trim();
+  button.addEventListener("click", saveCurrent);
+
+  const list = saved.list || [];
+  const rows = list.map((s) => {
+    const compare = h("button", { class: "ghost small", type: "button" }, "Compare");
+    compare.disabled = saved.busy || (!report && list.length < 2);
+    // With a current audit, compare against it; otherwise this report against the next most recent one.
+    compare.addEventListener("click", () => runCompare(report ? CURRENT : s.label, report ? s.label : (list.find((o) => o.label !== s.label) || {}).label || CURRENT));
+    const del = h("button", { class: "ghost small danger", type: "button" }, "Delete");
+    del.disabled = saved.busy;
+    del.addEventListener("click", () => deleteSaved(s.label));
+    return h("div", { class: "saved-row" },
+      h("div", { class: "saved-name" }, h("strong", {}, s.label),
+        h("span", { class: "muted" }, `score ${s.score ?? "unknown"} · audited ${time(s.generatedAt)}`)),
+      h("div", { class: "saved-actions" }, compare, del));
+  });
+
+  return [
+    h("section", { class: "card" },
+      h("h2", {}, "Saved reports"),
+      h("p", { class: "muted lead" },
+        "Keep this audit under a name, then compare it with another network later, for example your home Wi-Fi with " +
+        "your office Wi-Fi. Reports are saved as files on this computer in the same sanitized form as the audit: no " +
+        "network names or addresses. Saving under an existing name replaces it."),
+      h("div", { class: "save-form" }, input, button),
+      saved.error ? h("p", { class: "notice error" }, saved.error) : null,
+      saved.message ? h("p", { class: "notice" }, saved.message) : null,
+      list.length ? h("div", { class: "saved-list" }, rows)
+        : saved.list ? h("p", { class: "muted" }, "Nothing saved yet.") : null),
+    saved.compare ? comparisonCard() : null,
+  ];
+}
+
 function watchCard(watch) {
   if (!watch.enabled && !watch.events.length) return null;
   const status = watch.enabled
@@ -269,6 +398,7 @@ function render(state) {
     content.append(h("div", { class: "card empty" },
       h("p", {}, "No audit has run yet."),
       h("p", { class: "muted" }, "Run one while connected to a home network you own or administer.")),
+      ...savedCard(null).filter(Boolean),
       devicesCard());
     return;
   }
@@ -276,6 +406,7 @@ function render(state) {
     h("div", { class: "grid" }, scoreCard(report), fixesCard(report)),
     speedCard(report),
     findingsCard(report),
+    ...savedCard(report).filter(Boolean),
     devicesCard(),
     ...[mappingsCard(report), watchCard(watch)].filter(Boolean),
     h("section", { class: "card" }, h("h2", {}, "Privacy"),
@@ -326,4 +457,10 @@ $("watch-btn").addEventListener("click", () => {
 });
 
 refresh();
-setInterval(refresh, 20000);
+loadSaved();
+setInterval(() => {
+  // Redrawing the page would take the cursor out of a name that is being typed.
+  const active = document.activeElement;
+  if (active && active.tagName === "INPUT" && $("content").contains(active)) return;
+  refresh();
+}, 20000);

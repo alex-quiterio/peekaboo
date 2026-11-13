@@ -17,7 +17,7 @@ for await (const file of new Bun.Glob("**/*.{html,css,js}").scan(PUBLIC_DIR)) {
 }
 assets.set("/", path.join(PUBLIC_DIR, "index.html"));
 
-const { runAudit, listDevices, reports } = createAudit();
+const { runAudit, listDevices, savedReports, reports } = createAudit();
 
 const watch = {
   session: null as WatchSession | null,
@@ -125,6 +125,20 @@ const server = Bun.serve({
         const input = await body(req);
         setWatch(input.enabled === true, parseDns(input.dns), input.ispLatency === true);
         return Response.json(await state());
+      }
+      // Saved reports change only when the page asks: nothing here saves on its own.
+      if (route === "GET /api/saved") return Response.json(await savedReports.list(), { headers: { "cache-control": "no-store" } });
+      if (route === "POST /api/saved") {
+        await savedReports.saveCurrent((await body(req)).label);
+        return Response.json(await savedReports.list());
+      }
+      if (route === "POST /api/saved/delete") {
+        await savedReports.remove((await body(req)).label);
+        return Response.json(await savedReports.list());
+      }
+      if (route === "POST /api/compare") {
+        const input = await body(req);
+        return Response.json(await savedReports.compare(input.left, input.right), { headers: { "cache-control": "no-store" } });
       }
       // The device list goes to the page that asked and nowhere else: not into state, a file or the log.
       if (route === "POST /api/devices") {
