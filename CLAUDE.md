@@ -1,6 +1,6 @@
-# isp-visibility-checker
+# Peekaboo
 
-A read-only, privacy-conscious audit of a home network the user owns or administers. TypeScript on Bun, with a CLI and a local web dashboard over the same use cases.
+A read-only, privacy-conscious audit of a home network the user owns or administers. Rust, one binary (`peekaboo`) with a command line and a local web dashboard over the same use cases. Published to crates.io as `peekaboo-net`.
 
 ## Safety rules
 
@@ -9,33 +9,40 @@ A read-only, privacy-conscious audit of a home network the user owns or administ
 - Never add a target, host, CIDR, public-IP, banner-grabbing, credential, brute-force, exploit, or remote-login option.
 - TCP checks may only connect and immediately close, without sending application data. The only ports are those in `AUDITED_PORTS`.
 - Device checks read this device's own settings and socket table with fixed, read-only commands. They never connect to this device's ports, and they hand over only booleans and counts: no process names, addresses or hardware addresses.
-- Wi-Fi speed is the link rate, signal and channel width this device's own radio reports. Never run a speed test or send traffic to measure throughput. Speed advice is never scored and stays out of `topFixes`.
-- The opt-in ISP delay check (`--isp-latency`, the dashboard checkbox) is the only thing that may send packets past the gateway, and only when the caller passes exactly `true`. It sends hop-limited packets one hop at a time, never beyond `MAX_LATENCY_HOPS`, and stops when the first hop is not the audited gateway or as soon as a non-private hop answers. The direction address is a fixed constant, never input. Hop addresses are used only to tell private from non-private and are never printed or saved; only milliseconds and a hop count are kept. Distance is only ever stated as an upper limit ("no more than about N km of cable"), never as an estimate or a place.
+- Wi-Fi speed is the link rate, signal and channel width this device's own radio reports. Never run a speed test or send traffic to measure throughput. Speed advice is never scored and stays out of `top_fixes`.
+- The opt-in ISP delay check (`--isp-latency`, the dashboard switch) is the only thing that may send packets past the gateway, and only when the caller passes exactly `true`. It sends hop-limited packets one hop at a time, never beyond `MAX_LATENCY_HOPS`, and stops when the first hop is not the audited gateway or as soon as a non-private hop answers. The direction address is a fixed constant, never input. Hop addresses are used only to tell private from non-private and are never printed or saved; only milliseconds and a hop count are kept. Distance is only ever stated as an upper limit ("no more than about N km of cable"), never as an estimate or a place.
 - Never look up the public IP, geolocate anything, or contact a third-party service.
-- UPnP code may call only `getGateway()` and `getMappings()`. It must never create or delete mappings, call external-IP or connection-control methods, or change router configuration.
+- UPnP code may send only an SSDP search, one GET of the gateway's device description, and `GetGenericPortMappingEntry`. It must never create or delete mappings, ask for the external address, use connection-control actions, or change router configuration. Every address it contacts must be the gateway.
 - Never print or save SSIDs, BSSIDs, MAC addresses, device names, raw UPnP descriptions, resolver addresses, or complete private IPs.
-- Save only `sanitized-report.json` and `previous-sanitized-report.json`, plus named reports the user explicitly asks to keep (`--save`, `cli:reports save`, the dashboard's Save button) as one file each under `saved-reports/`. Nothing saves a named report on its own. A saved report is exactly the sanitized report, and its name is the only text the user adds: `parseLabel` limits it to short plain text, and file names come only from `labelKey`, never from the raw name. The store reads only files it could have written, and only ones shaped like a report. Comparing reads saved reports and sends nothing.
+- Save only `sanitized-report.json` and `previous-sanitized-report.json`, plus named reports the user explicitly asks to keep (`--save`, `peekaboo reports save`, the dashboard's Save button) as one file each under `saved-reports/`. All of it lives in the data folder (`PEEKABOO_DATA_DIR` or the per-user default), never next to the binary or source. Nothing saves a named report on its own. A saved report is exactly the sanitized report, and its name is the only text the user adds: `parse_label` limits it to short plain text, and file names come only from `label_key`, never from the raw name. The store reads only files it could have written, and only ones shaped like a report. Comparing reads saved reports and sends nothing.
 - Never label a locally reachable router port as internet-exposed.
 - Return "Unknown" when evidence is incomplete.
-- The web server binds to 127.0.0.1 only and serves only the files under `src/apps/web/public`.
+- The web server binds to 127.0.0.1 only and serves only the files compiled in from `src/apps/web/public` (the list in `src/apps/web/assets.rs`).
 
 ## Architecture
 
-Dependencies point inward only: `apps -> infrastructure -> application -> domain`. `bun run lint` enforces it.
+Dependencies point inward only: `apps -> infrastructure -> application -> domain`. `tests/architecture.rs` enforces it, and several of the safety rules above.
 
-- `src/domain` holds the model and every rule (gateway safety, evidence sanitizing, scoring, findings, report). No I/O. `ports.ts` declares the interfaces the outside world must implement.
-- `src/application` holds the use cases: `RunAudit` and `WatchSession`. Depends on domain interfaces only.
-- `src/infrastructure` holds the adapters (network, this device, JSON files) and `composition.ts`, the one place they are wired together.
-- `src/apps/cli` and `src/apps/web` are the two entry points. They do not import each other.
+- `src/domain` holds the model and every rule (gateway safety, evidence sanitizing, scoring, findings, speed advice, report, comparison, saved-report names). No I/O. `ports.rs` declares the traits the outside world must implement.
+- `src/application` holds the use cases: `RunAudit`, `SavedReports`, `ListDevices` and `WatchSession`. Depends on domain traits only.
+- `src/infrastructure` holds the adapters (network, UPnP, Wi-Fi, this device, JSON files) and `composition.rs`, the one place they are wired together.
+- `src/apps/cli` and `src/apps/web` are the two entry points. They do not import each other, and reach adapters only through `composition` (and `clock`). `src/apps/mod.rs` dispatches the command.
+- `src/main.rs` is only the entry point; the crate is also a library (`peekaboo`) so tests can reach it.
 
-Import across folders with the aliases `@domain/*`, `@application/*`, `@infrastructure/*`, `@apps/*`. Relative imports are for the same folder only.
+Tests use fakes and never touch the network, except `tests/web.rs`, which starts the real binary on a loopback port and runs no audit.
 
-Dashboard CSS lives in `src/apps/web/public/styles`, one file per concern; colours and fonts come only from `tokens.css`.
+Dashboard files live in `src/apps/web/public`, one CSS file per concern; colours and fonts come only from `tokens.css`. The one exception is `logo.svg`, an image that cannot read CSS variables, so its colours mirror the tokens.
+
+The report JSON keeps the camelCase shape the earlier TypeScript version wrote, so old reports still load. New fields get serde defaults.
 
 ## Commands
 
-- `bun run cli:scan --dns encrypted|plaintext|unknown [--isp-latency]` runs one audit (`--dns` defaults to `unknown`). About 20 seconds.
-- `bun run cli:reports` lists saved reports; `cli:reports save "Home"` keeps the latest audit under a name; `cli:reports compare "Office"` compares the latest audit with it, and `compare "Office" "Home"` compares two saved ones; `cli:reports delete "Home"` removes one. `cli:scan --save "Home"` audits and saves in one step.
-- `bun run cli:watch --dns ...` reruns the audit every 30 minutes and prints only sanitized changes.
-- `bun run web:start` serves the dashboard at http://127.0.0.1:4173 (`web:dev` restarts on change).
-- `bun run check` runs typecheck, lint and tests. Tests use fakes and never touch the network.
+- `cargo run -- scan [--dns encrypted|plaintext|unknown] [--isp-latency] [--save <name>]` runs one audit (`--dns` defaults to `unknown`). About 20 seconds.
+- `cargo run -- watch ...` reruns the audit every 30 minutes and prints only sanitized changes.
+- `cargo run -- web [--port N]` serves the dashboard at http://127.0.0.1:4173.
+- `cargo run -- reports` lists saved reports; `reports save "Home"` keeps the latest audit; `reports compare "Office"` compares the latest audit with it, and `compare "Office" "Home"` compares two saved ones; `reports delete "Home"` removes one.
+- `cargo test` runs everything. `cargo build --release` builds the binary.
+
+## Releasing
+
+Bump `version` in `Cargo.toml`, commit, publish a GitHub release tagged `v<version>`. `.github/workflows/release.yml` tests and publishes to crates.io using the `CARGO_REGISTRY_TOKEN` secret.

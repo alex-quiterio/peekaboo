@@ -1,0 +1,33 @@
+[package]
+# `peekaboo` is taken on crates.io; the command it installs is still `peekaboo`.
+name = "peekaboo-net"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+license = "MIT"
+description = "A read-only, privacy-conscious peek at what your home router and ISP can see. One binary: command line and local dashboard."
+readme = "README.md"
+keywords = ["network", "privacy", "wifi", "router", "audit"]
+categories = ["command-line-utilities", "network-programming"]
+exclude = [".github/", "CLAUDE.md", "LICENSE", "sanitized-report.json", "previous-sanitized-report.json", "saved-reports/", ".DS_Store"]
+
+[lib]
+name = "peekaboo"
+
+[[bin]]
+name = "peekaboo"
+path = "src/main.rs"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+regex = "1"
+tiny_http = "0.12"
+if-addrs = "0.13"
+unicode-normalization = "0.1"
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true
+opt-level = "s"

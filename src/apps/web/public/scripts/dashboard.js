@@ -440,7 +440,7 @@ async function refresh(path = "/api/state", payload) {
     if (state.scanning) fastPoll = setTimeout(refresh, 2000);
   } catch (err) {
     $("content").replaceChildren(h("p", { class: "notice error" },
-      `Could not reach the local audit server. Is "bun start" still running? (${err.message})`));
+      `Could not reach the local audit server. Is Peekaboo still running? (${err.message})`));
     $("scan-btn").disabled = false;
     setLoading(false);
   }

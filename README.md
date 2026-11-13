@@ -1,41 +1,59 @@
-# isp-visibility-checker
+<p align="center"><img src="src/apps/web/public/logo.svg" width="112" alt="Peekaboo: an eye peeking over a router"></p>
 
-A read-only privacy audit for a home network you own or administer. It checks your router from the inside, scores what it can measure, and tells you the three most useful things to fix. It also reports how fast your Wi-Fi link is and what would make it faster.
+# Peekaboo
 
-Run it only on your own network.
+A read-only peek at what your home router and ISP can see. It checks your router from the inside, scores what it can measure, tells you the three most useful things to fix, and reports how fast your Wi-Fi link is and what would make it faster.
+
+One binary, two ways to run it: a command line, and a local dashboard.
+
+Run it only on a network you own or administer.
+
+## Install
+
+```sh
+cargo install peekaboo-net        # installs the `peekaboo` command
+```
+
+or from a checkout: `cargo build --release`, then `target/release/peekaboo`. Needs Rust 1.85 or newer.
+
+macOS is the best supported. Linux works (Wi-Fi details come from `nmcli` and `iw`) but has had less testing. Windows is not supported yet: the audit stops there, because it cannot read the default route to rule out a VPN.
 
 ## Use it
 
 ```sh
-bun install
-bun run web:start                 # dashboard at http://127.0.0.1:4173
-bun run cli:scan --dns unknown    # one audit in the terminal
-bun run cli:watch --dns unknown   # re-audit every 30 minutes, print only changes
+peekaboo web                          # dashboard at http://127.0.0.1:4173
+peekaboo scan --dns unknown           # one audit in the terminal
+peekaboo watch --dns unknown          # re-audit every 30 minutes, print only changes
 ```
 
-There are two options:
+There are three options:
 
 - `--dns encrypted|plaintext|unknown`. The audit cannot safely see whether your DNS is encrypted, so you tell it.
-- `--isp-latency` also times the delay to the first router on your ISP's side. Off by default, because it is the one check that sends anything past your router. The dashboard has a checkbox for it.
+- `--isp-latency` also times the delay to the first router on your ISP's side. Off by default, because it is the one check that sends anything past your router. The dashboard has a switch for it.
+- `--save <name>` (scan only) keeps the audit under a name. See below.
 
-An audit takes about 20 seconds.
+An audit takes about 20 seconds. `peekaboo web --port 5000` changes the dashboard's port.
 
 ## Save and compare
 
 Keep an audit under a name, then compare it with another network, for example your home Wi-Fi with your office Wi-Fi:
 
 ```sh
-bun run cli:scan --save "Amsterdam work"      # audit and keep it
-bun run cli:reports                           # list saved reports
-bun run cli:reports compare "Amsterdam work"  # latest audit vs a saved one
-bun run cli:reports compare "Amsterdam work" "Home"   # two saved reports
-bun run cli:reports save "Home"               # keep the latest audit
-bun run cli:reports delete "Home"
+peekaboo scan --save "Amsterdam work"           # audit and keep it
+peekaboo reports                                # list saved reports
+peekaboo reports compare "Amsterdam work"       # latest audit vs a saved one
+peekaboo reports compare "Amsterdam work" Home  # two saved reports
+peekaboo reports save Home                      # keep the latest audit
+peekaboo reports delete Home
 ```
 
 The dashboard has the same in its "Saved reports" card. The comparison puts the two reports side by side, marks the better value on each measure (higher link rate, stronger signal, fewer crowded channels, lower delay and so on), and lists problems found on only one of them. Unknown values are never marked as better or worse.
 
-Saved reports are files in `saved-reports/` (not committed). They hold the same sanitized data as the report, so no network names or addresses, plus the name you chose. Saving under a name that exists replaces it.
+Saved reports hold the same sanitized data as the report, so no network names or addresses, plus the name you chose. Saving under a name that exists replaces it.
+
+## Where reports are kept
+
+In a per-user folder: `~/Library/Application Support/peekaboo` on macOS, `$XDG_DATA_HOME/peekaboo` (or `~/.local/share/peekaboo`) on Linux. Set `PEEKABOO_DATA_DIR` to use another folder. It holds `sanitized-report.json`, `previous-sanitized-report.json`, and the reports you saved under `saved-reports/`. Nothing else is written.
 
 ## What it checks
 
@@ -59,18 +77,22 @@ The score counts only checks that produced evidence. Coverage is reported next t
 ## What it does not do
 
 - It never scans anything except your private default gateway. There is no option to give it a target. The opt-in delay check times one router past yours and connects to nothing.
-- It does not look up your public IP address or where your ISP is located.
 - It stops without scanning if you are on a VPN, because the gateway would not be your router.
 - It does not test the internet side of your router. A port that answers here is reachable from inside your network only.
-- It stores no network names, MAC addresses, device names or full IP addresses. The only files written are `sanitized-report.json`, `previous-sanitized-report.json` and the reports you choose to save under `saved-reports/`.
+- It does not look up your public IP address or where your ISP is located.
+- It stores no network names, MAC addresses, device names or full IP addresses.
 
 ## Development
 
 ```sh
-bun run check   # typecheck, lint (layer rules), tests
+cargo test    # unit tests, architecture rules, and the web server against the real binary
 ```
 
-The code is layered `apps -> infrastructure -> application -> domain`; see `CLAUDE.md`.
+The code is layered `apps -> infrastructure -> application -> domain`, and `tests/architecture.rs` fails if a layer reaches the wrong way or a safety rule is broken. See `CLAUDE.md`.
+
+### Releasing
+
+Bump `version` in `Cargo.toml`, commit, then publish a GitHub release tagged with that version and a leading `v` (for example `v0.2.0`). The workflow in `.github/workflows/release.yml` runs the tests and publishes the crate to crates.io. It needs a crates.io API token stored as the repository secret `CARGO_REGISTRY_TOKEN`. Pre-releases are not published.
 
 ## Licence
 

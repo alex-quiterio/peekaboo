@@ -1,0 +1,335 @@
+{
+  "generatedAt": "2026-01-01T00:00:00.000Z",
+  "platform": "darwin",
+  "target": "<private-gateway>",
+  "checks": {
+    "ports": [
+      {
+        "port": 21,
+        "service": "ftp",
+        "reachable": false
+      },
+      {
+        "port": 22,
+        "service": "ssh",
+        "reachable": false
+      },
+      {
+        "port": 23,
+        "service": "telnet",
+        "reachable": false
+      },
+      {
+        "port": 53,
+        "service": "dns",
+        "reachable": true
+      },
+      {
+        "port": 80,
+        "service": "http",
+        "reachable": true
+      },
+      {
+        "port": 443,
+        "service": "https",
+        "reachable": false
+      },
+      {
+        "port": 445,
+        "service": "smb",
+        "reachable": false
+      },
+      {
+        "port": 2323,
+        "service": "telnet-alt",
+        "reachable": false
+      },
+      {
+        "port": 7547,
+        "service": "cwmp",
+        "reachable": false
+      },
+      {
+        "port": 8080,
+        "service": "http-alt",
+        "reachable": false
+      },
+      {
+        "port": 8443,
+        "service": "https-alt",
+        "reachable": false
+      }
+    ],
+    "upnp": {
+      "state": "unknown",
+      "mappingCount": null,
+      "sensitiveCount": null,
+      "mappings": []
+    },
+    "wifi": {
+      "state": "partial",
+      "security": "strong",
+      "securityMode": "WPA2",
+      "band": "5 GHz",
+      "sameChannelCount": null,
+      "overlappingCount": null,
+      "nearbyCount": null,
+      "speed": {
+        "linkRateMbps": 433,
+        "signalDbm": -37,
+        "noiseDbm": -95,
+        "signal": "excellent",
+        "channelWidthMhz": 80,
+        "standard": "Wi-Fi 5"
+      }
+    },
+    "dns": {
+      "status": "unknown"
+    },
+    "environment": {
+      "resolverProvider": "OpenDNS",
+      "globalIpv6": false,
+      "tunnelActive": false,
+      "firewall": "on",
+      "stealthMode": false,
+      "openListenerCount": 5,
+      "privateHardwareAddress": true,
+      "ipv6FromHardwareAddress": null,
+      "resolver": "public"
+    },
+    "latency": {
+      "requested": true,
+      "routerMs": 7,
+      "ispMs": 14,
+      "ownHops": 1,
+      "ispMaxKm": 700
+    }
+  },
+  "score": {
+    "provisional": 95,
+    "coveragePercent": 59,
+    "earnedWeight": 69,
+    "knownWeight": 73,
+    "totalWeight": 123,
+    "breakdown": [
+      {
+        "id": "port-21",
+        "label": "Port 21 (ftp)",
+        "weight": 6,
+        "earned": 6
+      },
+      {
+        "id": "port-22",
+        "label": "Port 22 (ssh)",
+        "weight": 6,
+        "earned": 6
+      },
+      {
+        "id": "port-23",
+        "label": "Port 23 (telnet)",
+        "weight": 10,
+        "earned": 10
+      },
+      {
+        "id": "port-80",
+        "label": "Port 80 (http)",
+        "weight": 4,
+        "earned": 0
+      },
+      {
+        "id": "port-445",
+        "label": "Port 445 (smb)",
+        "weight": 6,
+        "earned": 6
+      },
+      {
+        "id": "port-2323",
+        "label": "Port 2323 (telnet-alt)",
+        "weight": 8,
+        "earned": 8
+      },
+      {
+        "id": "port-7547",
+        "label": "Port 7547 (cwmp)",
+        "weight": 10,
+        "earned": 10
+      },
+      {
+        "id": "port-8080",
+        "label": "Port 8080 (http-alt)",
+        "weight": 3,
+        "earned": 3
+      },
+      {
+        "id": "upnp",
+        "label": "UPnP",
+        "weight": 20,
+        "earned": null
+      },
+      {
+        "id": "wifi",
+        "label": "Wi-Fi security",
+        "weight": 20,
+        "earned": 20
+      },
+      {
+        "id": "channel",
+        "label": "Channel congestion",
+        "weight": 10,
+        "earned": null
+      },
+      {
+        "id": "dns",
+        "label": "DNS",
+        "weight": 20,
+        "earned": null
+      }
+    ]
+  },
+  "findings": [
+    {
+      "id": "port-21",
+      "severity": "INFO",
+      "message": "Port 21 (ftp) is not reachable from this network."
+    },
+    {
+      "id": "port-22",
+      "severity": "INFO",
+      "message": "Port 22 (ssh) is not reachable from this network."
+    },
+    {
+      "id": "port-23",
+      "severity": "INFO",
+      "message": "Port 23 (telnet) is not reachable from this network."
+    },
+    {
+      "id": "port-53",
+      "severity": "INFO",
+      "message": "The router answers DNS (53), so it can act as your network's resolver."
+    },
+    {
+      "id": "port-80",
+      "severity": "LOW",
+      "message": "The router answers on HTTP (80) from this network, usually its admin page.",
+      "action": "Use the HTTPS admin page if your router offers one, and check WAN remote management is off."
+    },
+    {
+      "id": "port-443",
+      "severity": "INFO",
+      "message": "Port 443 (https) is not reachable from this network."
+    },
+    {
+      "id": "port-445",
+      "severity": "INFO",
+      "message": "Port 445 (smb) is not reachable from this network."
+    },
+    {
+      "id": "port-2323",
+      "severity": "INFO",
+      "message": "Port 2323 (telnet-alt) is not reachable from this network."
+    },
+    {
+      "id": "port-7547",
+      "severity": "INFO",
+      "message": "Port 7547 (cwmp) is not reachable from this network."
+    },
+    {
+      "id": "port-8080",
+      "severity": "INFO",
+      "message": "Port 8080 (http-alt) is not reachable from this network."
+    },
+    {
+      "id": "port-8443",
+      "severity": "INFO",
+      "message": "Port 8443 (https-alt) is not reachable from this network."
+    },
+    {
+      "id": "upnp",
+      "severity": "INFO",
+      "message": "UPnP: Unknown. No gateway answered discovery; verify the setting in the router."
+    },
+    {
+      "id": "wifi",
+      "severity": "INFO",
+      "message": "Wi-Fi security is strong (WPA2). WPA3 is stronger if your router and devices support it."
+    },
+    {
+      "id": "channel",
+      "severity": "INFO",
+      "message": "Channel congestion: Unknown. Your own access point could not be told apart from its neighbours. Operating systems hide Wi-Fi names from apps without Location permission."
+    },
+    {
+      "id": "band",
+      "severity": "INFO",
+      "message": "This device is connected on the 5 GHz band."
+    },
+    {
+      "id": "speed-link",
+      "severity": "INFO",
+      "message": "This device's Wi-Fi link rate is 433 Mbps (Wi-Fi 5, 80 MHz channel), which is fast. Expect about half of that in real use. Internet speed was not measured, because that would send traffic outside your network."
+    },
+    {
+      "id": "speed-signal",
+      "severity": "INFO",
+      "message": "The Wi-Fi signal is excellent (-37 dBm)."
+    },
+    {
+      "id": "speed-latency-router",
+      "severity": "INFO",
+      "message": "Your own router answers in about 7 ms."
+    },
+    {
+      "id": "speed-latency",
+      "severity": "INFO",
+      "message": "The first router on your ISP's side answers in about 14 ms, so the line to your ISP adds little delay. At the speed of light in fibre, that router is no more than about 700 km of cable away, and usually far closer: most of the delay comes from equipment, not distance. Where your ISP's equipment actually sits was not looked up."
+    },
+    {
+      "id": "dns",
+      "severity": "INFO",
+      "message": "DNS: Unknown. Tell the audit whether your DNS is encrypted to include it in the score."
+    },
+    {
+      "id": "resolver",
+      "severity": "INFO",
+      "message": "This device sends its DNS lookups straight to OpenDNS rather than to the router. Unless they are encrypted, your ISP can still read them in transit."
+    },
+    {
+      "id": "ipv6",
+      "severity": "INFO",
+      "message": "This device has no global IPv6 address."
+    },
+    {
+      "id": "firewall",
+      "severity": "INFO",
+      "message": "This device's firewall is on. Stealth mode is off; turning it on stops this device answering probes. At least 5 ports on this device accept connections from the network."
+    },
+    {
+      "id": "hardware-address",
+      "severity": "INFO",
+      "message": "This device shows the network a private (randomised) Wi-Fi address instead of its hardware address."
+    },
+    {
+      "id": "wan",
+      "severity": "INFO",
+      "message": "WAN exposure was not tested. Every check here was made from inside your network."
+    }
+  ],
+  "topFixes": [
+    "Use the HTTPS admin page if your router offers one, and check WAN remote management is off."
+  ],
+  "speedTips": [],
+  "privacy": [
+    "Only the private default gateway detected by the operating system was checked, plus this device's own network settings.",
+    "No SSIDs, BSSIDs, MAC addresses, device names, UPnP descriptions or complete IP addresses are stored.",
+    "Port checks connect and close without sending data. UPnP is read-only.",
+    "Device checks read this device's own settings. They send nothing and store only yes/no answers and counts.",
+    "Wi-Fi speed is the link rate this device's own radio reports. No speed test was run and nothing was sent to measure it.",
+    "Delay to your ISP was timed, at your request, with a few empty packets that expire at the first router past your own. No address or location was looked up or stored.",
+    "WAN exposure was not tested."
+  ],
+  "comparison": {
+    "previousScore": 96,
+    "currentScore": 95,
+    "delta": -1
+  }
+}
