@@ -1,0 +1,52 @@
+/* Score card (ring, before/after, coverage bar) and the top-fixes list. */
+.score { display: flex; gap: 20px; align-items: center; }
+
+.ring { width: 124px; height: 124px; flex: none; }
+.ring circle { fill: none; stroke-width: 10; }
+.ring .bg { stroke: var(--track); }
+.ring .fg {
+  stroke-linecap: round;
+  transform: rotate(-90deg);
+  transform-origin: 50% 50%;
+  transition: stroke-dashoffset 0.6s ease;
+  filter: drop-shadow(0 0 4px currentColor);
+}
+.ring text {
+  fill: var(--ink);
+  font-size: 34px;
+  font-weight: 700;
+  text-anchor: middle;
+  dominant-baseline: central;
+  font-variant-numeric: tabular-nums;
+  text-shadow: var(--glow);
+}
+
+.delta { font-weight: 600; font-variant-numeric: tabular-nums; text-shadow: var(--glow); }
+
+.coverage { margin-top: 18px; }
+.bar { height: 8px; margin: 6px 0 4px; overflow: hidden; background: var(--track); border-radius: 1px; }
+.bar i { display: block; height: 100%; background: var(--accent); border-radius: 1px; }
+
+ol.fixes { margin: 0; padding: 0; list-style: none; counter-reset: fix; }
+ol.fixes li {
+  counter-increment: fix;
+  display: flex;
+  gap: 12px;
+  padding: 10px 0;
+  border-top: 1px solid var(--line);
+}
+ol.fixes li:first-child { border-top: 0; padding-top: 0; }
+ol.fixes li::before {
+  content: counter(fix);
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  margin-top: 1px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--accent-ink);
+  background: var(--accent);
+  border-radius: 50%;
+}

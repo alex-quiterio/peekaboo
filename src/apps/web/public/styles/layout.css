@@ -1,0 +1,47 @@
+/* Page structure: the column, the header, the card grid. */
+main {
+  position: relative;
+  z-index: 1; /* above the rain canvas */
+  max-width: 1040px;
+  margin: 0 auto;
+  padding: 28px 16px 56px;
+}
+
+header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 24px;
+  align-items: baseline;
+  justify-content: space-between;
+}
+header p { margin: 4px 0 0; }
+
+.grid {
+  display: grid;
+  grid-template-columns: minmax(0, 340px) minmax(0, 1fr);
+  gap: 16px;
+}
+
+.card {
+  min-width: 0;
+  padding: 20px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--panel-glow);
+}
+section.card { margin-top: 16px; }
+.card.empty { text-align: center; padding: 48px 16px; }
+
+.notice {
+  margin: 0 0 20px;
+  padding: 10px 14px;
+  border-radius: var(--radius);
+  background: var(--info-bg);
+  color: var(--muted);
+}
+.notice.error { background: var(--high-bg); color: var(--high); }
+
+@media (max-width: 720px) {
+  .grid { grid-template-columns: minmax(0, 1fr); }
+}
