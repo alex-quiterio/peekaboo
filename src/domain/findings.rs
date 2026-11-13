@@ -1,5 +1,6 @@
 //! Explains checks in plain words. A LAN-side result is never described as internet exposure.
 use super::evidence::effective_dns;
+use super::exposure::exposure_findings;
 use super::model::*;
 use super::speed::{latency_findings, speed_findings, USE_FASTER_BAND};
 
@@ -235,6 +236,7 @@ pub fn build_findings(checks: &Checks) -> Vec<Finding> {
     findings.extend(latency_findings(&checks.latency));
     findings.extend(environment_findings(&checks.environment, checks));
     findings.extend(device_findings(checks));
+    findings.extend(exposure_findings(checks));
     findings.push(finding("wan", Severity::Info, "WAN exposure was not tested. Every check here was made from inside your network.", None));
     findings
 }

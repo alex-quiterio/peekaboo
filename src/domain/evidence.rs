@@ -1,5 +1,5 @@
 //! Turns raw observations into sanitized checks. Raw values (addresses, adapter strings) stop here.
-use super::gateway::{is_private_ipv4, redact_ipv4, SafetyStop};
+use super::gateway::{is_private_ipv4, parse_ipv4, redact_ipv4, SafetyStop};
 use super::model::*;
 use regex::Regex;
 use std::sync::LazyLock;
@@ -364,6 +364,11 @@ pub struct HopObservation {
     pub times_ms: Vec<f64>,
 }
 
+/// 100.64.0.0/10, the shared address space that ISPs use for carrier-grade NAT (RFC 6598).
+pub fn is_shared_address_space(address: &str) -> bool {
+    matches!(parse_ipv4(address), Some([100, b, _, _]) if (64..=127).contains(&b))
+}
+
 /// True once a hop outside the home has answered, which is where the measurement must stop.
 pub fn is_beyond_home(hop: &HopObservation) -> bool {
     hop.address.as_deref().is_some_and(|a| !is_private_ipv4(a))
@@ -408,6 +413,8 @@ pub fn latency_check_from(requested: bool, hops: &[HopObservation], gateway: &st
         isp_ms,
         own_hops: isp_ms.and(isp_index).map(|i| i as u32),
         isp_max_km: max_cable_km(router_ms, isp_ms),
+        // Only the yes/no leaves here: the address itself is never kept.
+        carrier_grade_nat: isp_index.and_then(|i| hops[i].address.as_deref()).map(is_shared_address_space),
     }
 }
 
@@ -526,7 +533,14 @@ mod tests {
     fn delay_is_read_from_the_first_two_hops_and_distance_is_only_an_upper_limit() {
         let hop = |a: &str, t: &[f64]| HopObservation { address: Some(a.into()), times_ms: t.to_vec() };
         let check = latency_check_from(true, &[hop("192.168.1.1", &[4.0, 2.0, 3.0]), hop("203.0.113.9", &[9.0, 12.0, 30.0])], "192.168.1.1");
-        assert_eq!(check, LatencyCheck { requested: true, router_ms: Some(3), isp_ms: Some(12), own_hops: Some(1), isp_max_km: Some(900) });
+        assert_eq!(check, LatencyCheck { requested: true, router_ms: Some(3), isp_ms: Some(12), own_hops: Some(1), isp_max_km: Some(900), carrier_grade_nat: Some(false) });
+        // The shared range is how an ISP's carrier-grade NAT shows up; only the yes/no is kept.
+        let cgnat = latency_check_from(true, &[hop("192.168.1.1", &[3.0]), hop("100.64.12.1", &[9.0])], "192.168.1.1");
+        assert_eq!(cgnat.carrier_grade_nat, Some(true));
+        assert_eq!(latency_check_from(true, &[hop("192.168.1.1", &[3.0])], "192.168.1.1").carrier_grade_nat, None);
+        for (address, shared) in [("100.64.0.1", true), ("100.127.255.254", true), ("100.63.255.255", false), ("100.128.0.1", false), ("10.0.0.1", false), ("8.8.8.8", false), ("not-an-ip", false)] {
+            assert_eq!(is_shared_address_space(address), shared, "{address}");
+        }
         assert_eq!(latency_check_from(false, &[], "192.168.1.1"), LatencyCheck::default());
         // The path must start at the audited gateway.
         assert_eq!(latency_check_from(true, &[hop("10.8.0.1", &[5.0])], "192.168.1.1"), LatencyCheck { requested: true, ..Default::default() });

@@ -14,10 +14,12 @@ USAGE
       Re-audit every 30 minutes and print only what changed.
   peekaboo reports [save <name> | compare <name> [<other>] | delete <name>]
       List, keep, compare or delete saved reports.
+  peekaboo history [clear]
+      Show how score, Wi-Fi speed and delay have changed across your audits.
   peekaboo web [--port <number>]
       Serve the dashboard at http://127.0.0.1:4173 (this computer only).
 
-Reports are kept in a per-user folder; set PEEKABOO_DATA_DIR to choose another.";
+Reports and history are kept in a per-user folder; set PEEKABOO_DATA_DIR to choose another.";
 
 /// Runs the command in `args` (the program name already removed) and returns the process exit code.
 pub fn run(args: Vec<String>) -> i32 {
@@ -29,6 +31,7 @@ pub fn run(args: Vec<String>) -> i32 {
         "scan" => cli::scan(rest),
         "watch" => cli::watch(rest),
         "reports" => cli::reports(rest),
+        "history" => cli::history(rest),
         "web" => web::serve(rest),
         "-h" | "--help" | "help" => {
             println!("{HELP}");

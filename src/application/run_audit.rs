@@ -1,4 +1,5 @@
 //! Use case: run one audit of the private default gateway and store the sanitized report.
+use super::history::History;
 use crate::domain::evidence::*;
 use crate::domain::gateway::{require_home_gateway, SafetyStop};
 use crate::domain::model::*;
@@ -17,6 +18,7 @@ pub struct AuditDependencies {
     pub latency: Box<dyn LatencyProbe>,
     pub reports: Arc<dyn ReportRepository>,
     pub clock: Arc<dyn Clock>,
+    pub history: Arc<History>,
     pub platform: String,
 }
 
@@ -97,6 +99,7 @@ impl RunAudit {
             &deps.platform,
         );
         deps.reports.save(&report).map_err(|_| SafetyStop::new("The report could not be saved. Nothing was changed."))?;
+        deps.history.record(&report);
         Ok(report)
     }
 }

@@ -12,9 +12,11 @@ A read-only, privacy-conscious audit of a home network the user owns or administ
 - Wi-Fi speed is the link rate, signal and channel width this device's own radio reports. Never run a speed test or send traffic to measure throughput. Speed advice is never scored and stays out of `top_fixes`.
 - The opt-in ISP delay check (`--isp-latency`, the dashboard switch) is the only thing that may send packets past the gateway, and only when the caller passes exactly `true`. It sends hop-limited packets one hop at a time, never beyond `MAX_LATENCY_HOPS`, and stops when the first hop is not the audited gateway or as soon as a non-private hop answers. The direction address is a fixed constant, never input. Hop addresses are used only to tell private from non-private and are never printed or saved; only milliseconds and a hop count are kept. Distance is only ever stated as an upper limit ("no more than about N km of cable"), never as an estimate or a place.
 - Never look up the public IP, geolocate anything, or contact a third-party service.
+- Internet-side insights (`src/domain/exposure.rs`) are inferred only from evidence the audit already holds: the range of the ISP's first router (only the yes/no `carrier_grade_nat` is kept, never the address), UPnP mappings, this device's IPv6 and firewall. They are never scored, never a test, and never worded as a measured exposure: say "most likely", "probably" or "if" where the evidence is indirect.
 - UPnP code may send only an SSDP search, one GET of the gateway's device description, and `GetGenericPortMappingEntry`. It must never create or delete mappings, ask for the external address, use connection-control actions, or change router configuration. Every address it contacts must be the gateway.
 - Never print or save SSIDs, BSSIDs, MAC addresses, device names, raw UPnP descriptions, resolver addresses, or complete private IPs.
-- Save only `sanitized-report.json` and `previous-sanitized-report.json`, plus named reports the user explicitly asks to keep (`--save`, `peekaboo reports save`, the dashboard's Save button) as one file each under `saved-reports/`. All of it lives in the data folder (`PEEKABOO_DATA_DIR` or the per-user default), never next to the binary or source. Nothing saves a named report on its own. A saved report is exactly the sanitized report, and its name is the only text the user adds: `parse_label` limits it to short plain text, and file names come only from `label_key`, never from the raw name. The store reads only files it could have written, and only ones shaped like a report. Comparing reads saved reports and sends nothing.
+- Save only `sanitized-report.json`, `previous-sanitized-report.json` and `history.json`, plus named reports the user explicitly asks to keep (`--save`, `peekaboo reports save`, the dashboard's Save button) as one file each under `saved-reports/`. All of it lives in the data folder (`PEEKABOO_DATA_DIR` or the per-user default), never next to the binary or source. Nothing saves a named report on its own. A saved report is exactly the sanitized report, and its name is the only text the user adds: `parse_label` limits it to short plain text, and file names come only from `label_key`, never from the raw name. The store reads only files it could have written, and only ones shaped like a report. Comparing reads saved reports and sends nothing.
+- `history.json` is the trend: after each audit one `HistoryPoint` is added (time, score, coverage, link rate, signal, delays, band: numbers only, never an address or name), capped at `MAX_HISTORY_POINTS`. Recording is best effort and never fails an audit. `peekaboo history clear` and the dashboard's Clear history button remove it.
 - Never label a locally reachable router port as internet-exposed.
 - Return "Unknown" when evidence is incomplete.
 - The web server binds to 127.0.0.1 only and serves only the files compiled in from `src/apps/web/public` (the list in `src/apps/web/assets.rs`).
@@ -23,8 +25,8 @@ A read-only, privacy-conscious audit of a home network the user owns or administ
 
 Dependencies point inward only: `apps -> infrastructure -> application -> domain`. `tests/architecture.rs` enforces it, and several of the safety rules above.
 
-- `src/domain` holds the model and every rule (gateway safety, evidence sanitizing, scoring, findings, speed advice, report, comparison, saved-report names). No I/O. `ports.rs` declares the traits the outside world must implement.
-- `src/application` holds the use cases: `RunAudit`, `SavedReports`, `ListDevices` and `WatchSession`. Depends on domain traits only.
+- `src/domain` holds the model and every rule (gateway safety, evidence sanitizing, scoring, findings, speed advice, report, comparison, saved-report names, history points). No I/O. `ports.rs` declares the traits the outside world must implement.
+- `src/application` holds the use cases: `RunAudit`, `SavedReports`, `History`, `ListDevices` and `WatchSession`. Depends on domain traits only.
 - `src/infrastructure` holds the adapters (network, UPnP, Wi-Fi, this device, JSON files) and `composition.rs`, the one place they are wired together.
 - `src/apps/cli` and `src/apps/web` are the two entry points. They do not import each other, and reach adapters only through `composition` (and `clock`). `src/apps/mod.rs` dispatches the command.
 - `src/main.rs` is only the entry point; the crate is also a library (`peekaboo`) so tests can reach it.
@@ -41,6 +43,7 @@ The report JSON keeps the camelCase shape the earlier TypeScript version wrote, 
 - `cargo run -- watch ...` reruns the audit every 30 minutes and prints only sanitized changes.
 - `cargo run -- web [--port N]` serves the dashboard at http://127.0.0.1:4173.
 - `cargo run -- reports` lists saved reports; `reports save "Home"` keeps the latest audit; `reports compare "Office"` compares the latest audit with it, and `compare "Office" "Home"` compares two saved ones; `reports delete "Home"` removes one.
+- `cargo run -- history [clear]` shows or clears the trend of past audits.
 - `cargo test` runs everything. `cargo build --release` builds the binary.
 
 ## Releasing

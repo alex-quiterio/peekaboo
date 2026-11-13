@@ -3,6 +3,7 @@
 use super::devices::{NeighbourObservation, SelfObservation};
 use super::evidence::{EnvironmentObservation, HopObservation, UpnpObservation, WifiObservation};
 use super::gateway::DefaultRoute;
+use super::history::HistoryPoint;
 use super::model::Report;
 use super::saved::SavedReport;
 
@@ -59,6 +60,14 @@ pub trait SavedReportStore: Send + Sync {
     fn save(&self, saved: &SavedReport) -> Result<(), String>;
     /// Returns false when there was nothing to remove.
     fn remove(&self, label: &str) -> bool;
+}
+
+/// The trend: one small point per audit. Written after each audit; the user can clear it.
+pub trait HistoryStore: Send + Sync {
+    fn load(&self) -> Vec<HistoryPoint>;
+    fn save(&self, points: &[HistoryPoint]) -> Result<(), String>;
+    /// Returns false when there was nothing to remove.
+    fn clear(&self) -> bool;
 }
 
 pub trait Clock: Send + Sync {

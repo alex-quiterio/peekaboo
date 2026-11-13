@@ -94,6 +94,8 @@ fn reports_an_empty_state_before_any_audit() {
     let state: serde_json::Value = serde_json::from_str(&get(&d, "/api/state", &host(&d)).body).unwrap();
     assert_eq!((state["scanning"].as_bool(), state["report"].is_null(), state["watch"]["enabled"].as_bool()), (Some(false), true, Some(false)));
     assert_eq!(get(&d, "/api/saved", &host(&d)).body, "[]");
+    assert_eq!(get(&d, "/api/history", &host(&d)).body, "[]");
+    assert_eq!(json_post(&d, "/api/history/clear", "{}").body, "[]");
 }
 
 #[test]
@@ -104,6 +106,8 @@ fn refuses_requests_that_did_not_come_from_the_dashboard() {
     assert_eq!(post(&d, "/api/saved", r#"{"label":"x"}"#, "").status, 403, "no JSON content type");
     assert_eq!(post(&d, "/api/saved", r#"{"label":"x"}"#, "Content-Type: application/json\r\nOrigin: http://evil.example\r\n").status, 403);
     assert_eq!(post(&d, "/api/scan", "{}", "Content-Type: text/plain\r\n").status, 403);
+    assert_eq!(get(&d, "/api/history", "evil.example").status, 403);
+    assert_eq!(post(&d, "/api/history/clear", "{}", "").status, 403);
 }
 
 #[test]
@@ -126,11 +130,12 @@ fn the_cli_refuses_targets_and_unknown_commands() {
     let run = |args: &[&str]| {
         Command::new(env!("CARGO_BIN_EXE_peekaboo")).args(args).env("PEEKABOO_DATA_DIR", std::env::temp_dir().join("peekaboo-cli-refusals")).output().unwrap()
     };
-    for args in [&["scan", "--target", "1.2.3.4"][..], &["scan", "192.168.1.1"], &["scan", "--dns", "8.8.8.8"], &["watch", "--save", "x"], &["reports", "bogus"], &["nope"]] {
+    for args in [&["scan", "--target", "1.2.3.4"][..], &["scan", "192.168.1.1"], &["scan", "--dns", "8.8.8.8"], &["watch", "--save", "x"], &["reports", "bogus"], &["history", "bogus"], &["history", "clear", "extra"], &["nope"]] {
         let out = run(args);
         assert!(!out.status.success(), "{args:?}");
         assert!(out.stdout.is_empty(), "{args:?} printed to stdout");
     }
     assert!(String::from_utf8_lossy(&run(&["--help"]).stdout).contains("peekaboo scan"));
+    assert!(String::from_utf8_lossy(&run(&["history"]).stdout).contains("No history yet"));
     assert!(String::from_utf8_lossy(&run(&["--version"]).stdout).starts_with("peekaboo "));
 }

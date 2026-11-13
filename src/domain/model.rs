@@ -253,6 +253,9 @@ pub struct LatencyCheck {
     pub own_hops: Option<u32>,
     /// The most cable there can be between the user's router and the ISP's. An upper limit, never an estimate.
     pub isp_max_km: Option<u32>,
+    /// The first router past the user's own is in the shared address range that ISPs use for carrier-grade
+    /// NAT (100.64.0.0/10), so the connection is most likely behind CGNAT. None when the delay was not measured.
+    pub carrier_grade_nat: Option<bool>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

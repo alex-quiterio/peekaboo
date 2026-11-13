@@ -61,6 +61,19 @@ pub fn watch(args: &[String]) -> i32 {
     }
 }
 
+pub fn history(args: &[String]) -> i32 {
+    let usage = || SafetyStop::new("Usage: peekaboo history [clear]");
+    finish((|| {
+        let app = create_app();
+        match args.first().map(String::as_str) {
+            None if args.is_empty() => println!("{}", format_history(&app.history.list())),
+            Some("clear") if args.len() == 1 => println!("{}", if app.history.clear() { "History cleared." } else { "There was no history to clear." }),
+            _ => return Err(usage()),
+        }
+        Ok(())
+    })())
+}
+
 pub fn reports(args: &[String]) -> i32 {
     finish((|| {
         let usage = || SafetyStop::new(REPORTS_USAGE);

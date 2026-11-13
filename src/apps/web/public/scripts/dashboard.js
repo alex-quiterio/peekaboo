@@ -145,9 +145,25 @@ function syncToggleAll() {
   button.dataset.open = everyOpen;
 }
 
+// What can be said about the internet side. Peekaboo checks from inside, so this is inferred, never tested.
+const isInternetSide = (f) => f.id === "wan" || f.id.startsWith("wan-");
+
+function internetCard(report) {
+  const items = report.findings.filter(isInternetSide);
+  if (!items.length) return null;
+  const sorted = [...items].sort((a, b) => SEVERITY.indexOf(a.severity) - SEVERITY.indexOf(b.severity));
+  return h("section", { class: "card" },
+    h("h2", {}, "Internet side"),
+    h("p", { class: "muted lead" },
+      "Peekaboo checks from inside your network and never tests from outside, so this is inferred from what it can " +
+      "see: how your ISP addresses you, the port forwards UPnP holds, and this device's IPv6 and firewall. It is not " +
+      "a scan of your public address."),
+    h("div", { class: "findings" }, sorted.map((f) => findingRow(f, null))));
+}
+
 function findingsCard(report) {
   const lines = Object.fromEntries(report.score.breakdown.map((line) => [line.id, line]));
-  const sorted = [...report.findings].sort((a, b) => SEVERITY.indexOf(a.severity) - SEVERITY.indexOf(b.severity));
+  const sorted = report.findings.filter((f) => !isInternetSide(f)).sort((a, b) => SEVERITY.indexOf(a.severity) - SEVERITY.indexOf(b.severity));
   const toggle = h("button", { class: "ghost small", type: "button", id: "findings-toggle" }, "Expand all");
   toggle.addEventListener("click", () => {
     const open = toggle.dataset.open !== "true";
@@ -357,6 +373,83 @@ function savedCard(report) {
   ];
 }
 
+// The trend lives in a file on this computer. The page asks the server for it and redraws after each audit.
+const trend = { points: null, loadedFor: null };
+
+async function loadHistory() {
+  try { trend.points = await call("/api/history"); } catch { trend.points = []; }
+  refresh();
+}
+
+async function clearHistory() {
+  if (!confirm("Clear the trend history? This cannot be undone.")) return;
+  try { trend.points = await call("/api/history/clear", {}); } catch { /* keep what is shown */ }
+  refresh();
+}
+
+const TREND_MEASURES = [
+  { name: "Score", unit: "", pick: (p) => p.score },
+  { name: "Wi-Fi link rate", unit: "Mbps", pick: (p) => p.linkRateMbps },
+  { name: "Wi-Fi signal", unit: "dBm", pick: (p) => p.signalDbm },
+  { name: "Delay to router", unit: "ms", pick: (p) => p.routerMs },
+  { name: "Delay to ISP", unit: "ms", pick: (p) => p.ispMs },
+];
+
+// A line through the known values; a gap in the data breaks the line instead of being bridged.
+function spark(values) {
+  const W = 160, H = 44, PAD = 5;
+  const known = values.filter((v) => v !== null && v !== undefined);
+  const min = Math.min(...known), max = Math.max(...known);
+  const x = (i) => (values.length === 1 ? W / 2 : PAD + (i / (values.length - 1)) * (W - 2 * PAD));
+  const y = (v) => (max === min ? H / 2 : H - PAD - ((v - min) / (max - min)) * (H - 2 * PAD));
+  let d = "", pen = false, last = null;
+  values.forEach((v, i) => {
+    if (v === null || v === undefined) { pen = false; return; }
+    d += `${pen ? "L" : "M"}${x(i).toFixed(1)} ${y(v).toFixed(1)} `;
+    pen = true;
+    last = [x(i), y(v)];
+  });
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  svg.setAttribute("preserveAspectRatio", "none");
+  svg.setAttribute("class", "spark");
+  svg.setAttribute("aria-hidden", "true");
+  svg.innerHTML = `<line class="base" x1="0" y1="${H - 1}" x2="${W}" y2="${H - 1}"/><path d="${d}"/>` +
+    (last ? `<circle cx="${last[0].toFixed(1)}" cy="${last[1].toFixed(1)}" r="3.5"/>` : "");
+  return svg;
+}
+
+function trendCard() {
+  const points = trend.points;
+  if (!points) return null;
+  const clear = h("button", { class: "ghost small danger", type: "button" }, "Clear history");
+  clear.addEventListener("click", clearHistory);
+  const head = h("div", { class: "card-head" }, h("h2", {}, "Trend"), points.length ? clear : null);
+  if (points.length < 2) {
+    return h("section", { class: "card" }, head,
+      h("p", { class: "muted" }, points.length === 0
+        ? "No history yet. Every audit adds a point; start the 30-minute watch to build a trend."
+        : "One audit so far. Run another, or start the 30-minute watch, to see a trend."));
+  }
+  const shown = points.slice(-60);
+  const charts = TREND_MEASURES.map(({ name, unit, pick }) => {
+    const values = shown.map(pick);
+    const known = values.filter((v) => v !== null && v !== undefined);
+    if (!known.length) return null;
+    const latest = [...values].reverse().find((v) => v !== null && v !== undefined);
+    return h("div", { class: "trend" },
+      h("div", { class: "name" }, name),
+      h("div", { class: "value" }, latest, unit ? h("small", {}, ` ${unit}`) : null),
+      spark(values),
+      h("div", { class: "range" }, `${Math.min(...known)} to ${Math.max(...known)}${unit ? " " + unit : ""}`));
+  }).filter(Boolean);
+  return h("section", { class: "card" }, head,
+    h("p", { class: "muted lead" },
+      `${points.length} audit${points.length === 1 ? "" : "s"}, ${time(points[0].at)} to ${time(points[points.length - 1].at)}. ` +
+      "Each audit adds a point of numbers only: no network names or addresses. Audits on different networks share one trend; clear it when you move."),
+    h("div", { class: "trends" }, charts));
+}
+
 function watchCard(watch) {
   if (!watch.enabled && !watch.events.length) return null;
   const status = watch.enabled
@@ -386,6 +479,11 @@ function render(state) {
   const content = $("content");
   content.replaceChildren();
 
+  // A new audit has finished: fetch the trend again, once for each audit.
+  if (report && !scanning && trend.loadedFor !== report.generatedAt) {
+    trend.loadedFor = report.generatedAt;
+    loadHistory();
+  }
   setLoading(scanning);
   $("scan-btn").disabled = scanning;
   $("scan-btn").textContent = scanning ? "Auditing… (about 20 seconds)" : report ? "Run audit again" : "Run audit";
@@ -405,6 +503,8 @@ function render(state) {
   content.append(
     h("div", { class: "grid" }, scoreCard(report), fixesCard(report)),
     speedCard(report),
+    trendCard(),
+    internetCard(report),
     findingsCard(report),
     ...savedCard(report).filter(Boolean),
     devicesCard(),

@@ -2,6 +2,7 @@
 use crate::domain::compare::{Better, ReportComparison};
 use crate::domain::evidence::parse_dns;
 use crate::domain::gateway::SafetyStop;
+use crate::domain::history::{range, series, sparkline, HistoryPoint};
 use crate::domain::model::{DnsStatus, Report};
 use crate::domain::saved::{parse_label, SavedReportSummary};
 
@@ -116,6 +117,55 @@ pub fn format_comparison(c: &ReportComparison) -> String {
     lines.join("\n")
 }
 
+/// How many of the latest audits the sparklines and the table show.
+const HISTORY_SHOWN: usize = 40;
+const HISTORY_ROWS: usize = 10;
+
+/// Sparklines for the main measures, then the latest audits one per line.
+pub fn format_history(points: &[HistoryPoint]) -> String {
+    if points.is_empty() {
+        return "No history yet. Every audit adds a point; `peekaboo watch` adds one every 30 minutes.".to_string();
+    }
+    let shown = &points[points.len().saturating_sub(HISTORY_SHOWN)..];
+    let mut lines = vec![
+        format!("History: {} audit{}, {} to {}", points.len(), if points.len() == 1 { "" } else { "s" }, when(&points[0].at), when(&points[points.len() - 1].at)),
+        String::new(),
+    ];
+    type Measure = (&'static str, &'static str, fn(&HistoryPoint) -> Option<f64>);
+    let measures: [Measure; 5] = [
+        ("Score", "", |p| p.score.map(f64::from)),
+        ("Link rate", " Mbps", |p| p.link_rate_mbps.map(f64::from)),
+        ("Signal", " dBm", |p| p.signal_dbm.map(f64::from)),
+        ("Router delay", " ms", |p| p.router_ms.map(f64::from)),
+        ("ISP delay", " ms", |p| p.isp_ms.map(f64::from)),
+    ];
+    for (name, unit, pick) in measures {
+        let values = series(shown, pick);
+        let summary = match (range(&values), values.iter().rev().flatten().next()) {
+            (Some((min, max)), Some(latest)) => format!("latest {latest}{unit}  ({min} to {max})"),
+            _ => "no data".to_string(),
+        };
+        lines.push(format!("  {name:<13} {}  {summary}", sparkline(&values)));
+    }
+    lines.push(String::new());
+    lines.push("Latest audits:".to_string());
+    for p in points.iter().rev().take(HISTORY_ROWS) {
+        let cell = |v: Option<String>| v.unwrap_or_else(|| "?".to_string());
+        let row = format!(
+            "  {}  score {:<3}  {:<9}  {:<8}  {} / {} ms  {}",
+            when(&p.at),
+            cell(p.score.map(|s| s.to_string())),
+            cell(p.link_rate_mbps.map(|r| format!("{r} Mbps"))),
+            cell(p.signal_dbm.map(|s| format!("{s} dBm"))),
+            cell(p.router_ms.map(|m| m.to_string())),
+            cell(p.isp_ms.map(|m| m.to_string())),
+            p.band.map_or("", |b| b.as_str()),
+        );
+        lines.push(row.trim_end().to_string());
+    }
+    lines.join("\n")
+}
+
 /// Prints a message that is safe to show.
 pub fn stop_safely(error: &SafetyStop) {
     eprintln!("{error}");
@@ -145,6 +195,22 @@ mod tests {
             assert!(options_from_args(&args(bad), true).is_err(), "{bad:?}");
         }
         assert!(options_from_args(&args(&["--save", "Home"]), false).is_err(), "watch cannot save");
+    }
+
+    fn point(at: &str, score: u32, link: Option<u32>) -> HistoryPoint {
+        HistoryPoint { at: at.into(), score: Some(score), coverage_percent: 59, link_rate_mbps: link, signal_dbm: Some(-50), router_ms: Some(5), isp_ms: None, band: None }
+    }
+
+    #[test]
+    fn shows_a_trend_with_sparklines_and_the_latest_audits() {
+        let points = [point("2026-11-13T10:00:00.000Z", 80, Some(100)), point("2026-11-13T11:00:00.000Z", 90, None), point("2026-11-13T12:00:00.000Z", 100, Some(300))];
+        let text = format_history(&points);
+        assert!(text.starts_with("History: 3 audits, 2026-11-13 10:00 UTC to 2026-11-13 12:00 UTC"));
+        assert!(text.contains("Score         ▁▅█  latest 100  (80 to 100)"), "{text}");
+        assert!(text.contains("Link rate     ▁·█  latest 300 Mbps  (100 to 300)"), "{text}");
+        assert!(text.contains("ISP delay     ···  no data"));
+        assert!(text.contains("2026-11-13 12:00 UTC  score 100  300 Mbps"));
+        assert_eq!(format_history(&[]).lines().count(), 1);
     }
 
     #[test]

@@ -24,6 +24,7 @@ macOS is the best supported. Linux works (Wi-Fi details come from `nmcli` and `i
 peekaboo web                          # dashboard at http://127.0.0.1:4173
 peekaboo scan --dns unknown           # one audit in the terminal
 peekaboo watch --dns unknown          # re-audit every 30 minutes, print only changes
+peekaboo history                      # how score, Wi-Fi speed and delay have changed
 ```
 
 There are three options:
@@ -51,9 +52,20 @@ The dashboard has the same in its "Saved reports" card. The comparison puts the 
 
 Saved reports hold the same sanitized data as the report, so no network names or addresses, plus the name you chose. Saving under a name that exists replaces it.
 
+## Trend history
+
+Every audit adds one small point to a history: the score, link rate, signal, delays and the time. Run `peekaboo history` to see sparklines for each measure and the latest audits, or open the "Trend" card in the dashboard. Left running, `peekaboo watch` builds a picture of how your Wi-Fi and line behave through the day, which one audit cannot show.
+
+```sh
+peekaboo history          # sparklines and the latest audits
+peekaboo history clear    # start again
+```
+
+A point holds numbers only: no network names or addresses. The last 500 are kept. Audits on different networks share one history, so clear it when you move.
+
 ## Where reports are kept
 
-In a per-user folder: `~/Library/Application Support/peekaboo` on macOS, `$XDG_DATA_HOME/peekaboo` (or `~/.local/share/peekaboo`) on Linux. Set `PEEKABOO_DATA_DIR` to use another folder. It holds `sanitized-report.json`, `previous-sanitized-report.json`, and the reports you saved under `saved-reports/`. Nothing else is written.
+In a per-user folder: `~/Library/Application Support/peekaboo` on macOS, `$XDG_DATA_HOME/peekaboo` (or `~/.local/share/peekaboo`) on Linux. Set `PEEKABOO_DATA_DIR` to use another folder. It holds `sanitized-report.json`, `previous-sanitized-report.json`, `history.json`, and the reports you saved under `saved-reports/`. Nothing else is written.
 
 ## What it checks
 
@@ -64,6 +76,7 @@ In a per-user folder: `~/Library/Application Support/peekaboo` on macOS, `$XDG_D
 | Wi-Fi | Security mode, band, and how crowded your channel is. |
 | Wi-Fi speed | The link rate, signal, Wi-Fi standard and channel width this device's radio reports, with tips to make the Wi-Fi faster. No speed test is run, so internet speed is not measured. Never scored. |
 | Delay to your ISP (opt-in) | Sends a few empty packets with a hop limit so small that they expire at the first router past your own, and times the answers. Reports milliseconds, and the most cable there can be to that router (an upper limit from the speed of light, not an estimate). No address, no location, no lookup service. Never scored. |
+| Internet side (inferred) | What can be said about exposure from outside, without testing from outside: whether your ISP puts you behind carrier-grade NAT or you are behind double NAT (needs `--isp-latency`), which ports UPnP forwards to the internet, and whether a device with a global IPv6 address is reachable. It never tests from outside and never looks up your public address; it tells you how to check for yourself. Never scored. |
 | DNS | Encryption status as you report it, plus which resolver this device uses. |
 | IPv6 | Whether this device has a global IPv6 address, and whether that address is built from its hardware address. |
 | VPN or tunnel | Whether a tunnel is connected alongside your normal connection. If so, a reported "encrypted" DNS is treated as Unknown, because a tunnel can send lookups around encrypted DNS. |
@@ -78,7 +91,7 @@ The score counts only checks that produced evidence. Coverage is reported next t
 
 - It never scans anything except your private default gateway. There is no option to give it a target. The opt-in delay check times one router past yours and connects to nothing.
 - It stops without scanning if you are on a VPN, because the gateway would not be your router.
-- It does not test the internet side of your router. A port that answers here is reachable from inside your network only.
+- It does not test the internet side of your router. A port that answers here is reachable from inside your network only. The "Internet side" findings are inferences from what it can see, and say so.
 - It does not look up your public IP address or where your ISP is located.
 - It stores no network names, MAC addresses, device names or full IP addresses.
 

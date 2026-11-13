@@ -2,6 +2,7 @@
 pub mod clock;
 pub mod composition;
 pub mod device;
+pub mod json_history_store;
 pub mod json_report_repository;
 pub mod json_saved_report_store;
 pub mod latency;

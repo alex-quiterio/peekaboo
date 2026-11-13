@@ -83,9 +83,9 @@ fn upnp_may_only_read_port_mappings() {
 }
 
 #[test]
-fn only_the_two_stores_write_files() {
+fn only_the_stores_write_files() {
     for (path, code) in sources() {
-        if path.ends_with("json_report_repository.rs") || path.ends_with("json_saved_report_store.rs") {
+        if ["json_report_repository.rs", "json_saved_report_store.rs", "json_history_store.rs"].iter().any(|f| path.ends_with(f)) {
             continue;
         }
         for call in ["fs::write", "File::create", "fs::rename", "create_dir", "fs::remove", "OpenOptions"] {

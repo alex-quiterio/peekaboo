@@ -2,8 +2,10 @@
 pub mod compare;
 pub mod devices;
 pub mod evidence;
+pub mod exposure;
 pub mod findings;
 pub mod gateway;
+pub mod history;
 pub mod model;
 pub mod ports;
 pub mod report;

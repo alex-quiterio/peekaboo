@@ -1,10 +1,12 @@
 //! The use cases against fakes: nothing here touches the network, this device or the disk.
+use super::history::History;
 use super::run_audit::*;
 use super::saved_reports::*;
 use super::watch_session::*;
 use crate::domain::compare::Better;
 use crate::domain::evidence::*;
 use crate::domain::gateway::DefaultRoute;
+use crate::domain::history::HistoryPoint;
 use crate::domain::model::Report;
 use crate::domain::ports::*;
 use crate::domain::saved::{label_key, SavedReport, MAX_SAVED_REPORTS};
@@ -104,6 +106,27 @@ impl LatencyProbe for Latency {
     }
 }
 
+#[derive(Default)]
+struct MemoryHistory {
+    points: Mutex<Vec<HistoryPoint>>,
+    broken: bool,
+}
+impl HistoryStore for MemoryHistory {
+    fn load(&self) -> Vec<HistoryPoint> {
+        self.points.lock().unwrap().clone()
+    }
+    fn save(&self, points: &[HistoryPoint]) -> Result<(), String> {
+        if self.broken {
+            return Err("disk full".into());
+        }
+        *self.points.lock().unwrap() = points.to_vec();
+        Ok(())
+    }
+    fn clear(&self) -> bool {
+        !std::mem::take(&mut *self.points.lock().unwrap()).is_empty()
+    }
+}
+
 struct FixedClock;
 impl Clock for FixedClock {
     fn now_iso(&self) -> String {
@@ -124,9 +147,15 @@ struct Harness {
     probed: Arc<Mutex<Vec<String>>>,
     traced: Arc<Mutex<Vec<u32>>>,
     reports: Arc<MemoryReports>,
+    history: Arc<MemoryHistory>,
 }
 
 fn harness_with(route: DefaultRoute, latency: fn(u32) -> Option<HopObservation>) -> Harness {
+    harness_full(route, latency, MemoryHistory::default())
+}
+
+fn harness_full(route: DefaultRoute, latency: fn(u32) -> Option<HopObservation>, history: MemoryHistory) -> Harness {
+    let history = Arc::new(history);
     let (probed, traced) = (Arc::new(Mutex::new(vec![])), Arc::new(Mutex::new(vec![])));
     let reports = Arc::new(MemoryReports::default());
     let audit = RunAudit::new(AuditDependencies {
@@ -138,9 +167,10 @@ fn harness_with(route: DefaultRoute, latency: fn(u32) -> Option<HopObservation>)
         latency: Box::new(Latency(traced.clone(), latency)),
         reports: reports.clone(),
         clock: Arc::new(FixedClock),
+        history: Arc::new(History::new(history.clone())),
         platform: "test".into(),
     });
-    Harness { audit, probed, traced, reports }
+    Harness { audit, probed, traced, reports, history }
 }
 
 fn home() -> DefaultRoute {
@@ -342,4 +372,33 @@ fn baseline_first_quiet_when_unchanged_change_lines_when_something_moves() {
     assert_eq!(event.kind, WatchKind::Change);
     assert!(event.lines.contains(&"DNS: unknown -> encrypted".to_string()));
     assert_eq!(session.quiet_runs, 0);
+}
+
+// ---------- History ----------
+
+#[test]
+fn every_audit_adds_a_numbers_only_point_to_the_trend() {
+    let h = harness();
+    h.audit.execute(Some("unknown"), OFF).unwrap();
+    h.audit.execute(Some("unknown"), ON).unwrap();
+    let points = h.history.points.lock().unwrap().clone();
+    // The fake clock gives both audits the same time, so the second replaces the first.
+    assert_eq!(points.len(), 1);
+    assert_eq!((points[0].link_rate_mbps, points[0].signal_dbm, points[0].router_ms, points[0].isp_ms), (Some(866), Some(-50), Some(3), Some(12)));
+    let json = serde_json::to_string(&points).unwrap();
+    assert!(!json.contains("192.168") && !json.contains("203.0.113"));
+}
+
+#[test]
+fn a_trend_that_cannot_be_written_never_fails_the_audit() {
+    let h = harness_full(home(), home_and_isp, MemoryHistory { broken: true, ..Default::default() });
+    assert!(h.audit.execute(Some("unknown"), OFF).is_ok());
+    assert!(h.history.points.lock().unwrap().is_empty());
+}
+
+#[test]
+fn a_refused_audit_adds_nothing_to_the_trend() {
+    let h = harness_with(DefaultRoute { address: Some("10.8.0.1".into()), interface_name: Some("utun4".into()) }, home_and_isp);
+    assert!(h.audit.execute(Some("unknown"), OFF).is_err());
+    assert!(h.history.points.lock().unwrap().is_empty());
 }

@@ -1,0 +1,16 @@
+/* Trend card: one small line chart per measure. */
+.trends {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 16px 20px;
+}
+.trend { min-width: 0; padding-left: 12px; border-left: 2px solid var(--line); }
+.trend .name { color: var(--muted); }
+.trend .value { font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; text-shadow: var(--glow); }
+.trend .value small { font-size: 13px; font-weight: 400; color: var(--muted); text-shadow: none; }
+.trend .range { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+
+svg.spark { display: block; width: 100%; height: 48px; margin: 4px 0; overflow: visible; }
+svg.spark path { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+svg.spark circle { fill: var(--accent); filter: drop-shadow(0 0 3px var(--accent)); }
+svg.spark .base { stroke: var(--line); stroke-width: 1; vector-effect: non-scaling-stroke; }

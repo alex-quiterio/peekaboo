@@ -13,6 +13,7 @@ pub const ASSETS: &[(&str, &str, &str)] = &[
     ("/styles/devices.css", CSS, include_str!("public/styles/devices.css")),
     ("/styles/effects.css", CSS, include_str!("public/styles/effects.css")),
     ("/styles/findings.css", CSS, include_str!("public/styles/findings.css")),
+    ("/styles/history.css", CSS, include_str!("public/styles/history.css")),
     ("/styles/layout.css", CSS, include_str!("public/styles/layout.css")),
     ("/styles/loading.css", CSS, include_str!("public/styles/loading.css")),
     ("/styles/saved.css", CSS, include_str!("public/styles/saved.css")),

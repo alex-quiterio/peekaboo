@@ -337,7 +337,7 @@ fn speed_tips_stay_out_of_the_privacy_top_fixes() {
 #[test]
 fn delay_findings_tell_a_slow_line_from_slow_wifi() {
     let check = |router_ms: Option<u32>, isp_ms: Option<u32>, requested| {
-        latency_findings(&LatencyCheck { requested, router_ms, isp_ms, own_hops: isp_ms.map(|_| 1), isp_max_km: max_cable_km(router_ms, isp_ms) })
+        latency_findings(&LatencyCheck { requested, router_ms, isp_ms, own_hops: isp_ms.map(|_| 1), isp_max_km: max_cable_km(router_ms, isp_ms), ..Default::default() })
             .into_iter()
             .map(|f| format!("{}:{}", f.id, f.severity.label()))
             .collect::<Vec<_>>()
@@ -355,7 +355,7 @@ fn delay_findings_tell_a_slow_line_from_slow_wifi() {
 #[test]
 fn distance_is_an_upper_limit_and_is_withheld_when_the_line_adds_no_measurable_delay() {
     let message = |router_ms, isp_ms| {
-        latency_findings(&LatencyCheck { requested: true, router_ms: Some(router_ms), isp_ms: Some(isp_ms), own_hops: Some(1), isp_max_km: max_cable_km(Some(router_ms), Some(isp_ms)) })
+        latency_findings(&LatencyCheck { requested: true, router_ms: Some(router_ms), isp_ms: Some(isp_ms), own_hops: Some(1), isp_max_km: max_cable_km(Some(router_ms), Some(isp_ms)), ..Default::default() })
             .pop()
             .unwrap()
             .message
@@ -437,7 +437,7 @@ fn unknown_never_wins_and_delay_is_compared_when_both_sides_measured_it() {
     assert_eq!((row("link-rate", &c).right.as_deref(), row("link-rate", &c).better), (None, None));
 
     let timed = |router_ms: u32, isp_ms: u32| {
-        compare_report(observation(|_| {}), |c| c.latency = LatencyCheck { requested: true, router_ms: Some(router_ms), isp_ms: Some(isp_ms), own_hops: Some(1), isp_max_km: max_cable_km(Some(router_ms), Some(isp_ms)) })
+        compare_report(observation(|_| {}), |c| c.latency = LatencyCheck { requested: true, router_ms: Some(router_ms), isp_ms: Some(isp_ms), own_hops: Some(1), isp_max_km: max_cable_km(Some(router_ms), Some(isp_ms)), ..Default::default() })
     };
     let c = compare_reports(("A", &timed(3, 9)), ("B", &timed(5, 30)));
     assert_eq!((row("isp-delay", &c).left.as_deref(), row("isp-delay", &c).better), (Some("9 ms"), Some(Better::Left)));
@@ -484,3 +484,93 @@ fn old_typescript_reports_load_and_summarise() {
     let again: Report = serde_json::from_str(&serde_json::to_string_pretty(&report).unwrap()).unwrap();
     assert_eq!(again, report);
 }
+
+// ---------- the internet side ----------
+
+fn wan<'a>(findings: &'a [Finding], id: &str) -> &'a Finding {
+    find(findings, id).unwrap_or_else(|| panic!("no {id}"))
+}
+
+fn timed(cgnat: Option<bool>, own_hops: u32) -> LatencyCheck {
+    LatencyCheck { requested: true, router_ms: Some(3), isp_ms: Some(9), own_hops: Some(own_hops), isp_max_km: Some(600), carrier_grade_nat: cgnat }
+}
+
+fn mapping(port: u32, sensitive: bool) -> SanitizedMapping {
+    SanitizedMapping { label: "<mapping-1>".into(), protocol: "TCP".into(), external_port: port, internal_port: port, internal_host: "192.168.1.x".into(), sensitive }
+}
+
+fn forwards(mappings: Vec<SanitizedMapping>) -> UpnpCheck {
+    UpnpCheck { state: UpnpState::Detected, mapping_count: Some(mappings.len() as u32), sensitive_count: Some(0), mappings }
+}
+
+#[test]
+fn says_whether_the_isp_puts_you_behind_carrier_grade_nat() {
+    let nat = |latency: LatencyCheck| build_findings(&checks(|c| c.latency = latency));
+    assert!(wan(&nat(timed(Some(true), 1)), "wan-nat").message.contains("most likely behind CGNAT"));
+    assert!(wan(&nat(timed(Some(false), 1)), "wan-nat").message.contains("ordinary public address"));
+    assert!(wan(&nat(timed(Some(false), 2)), "wan-nat").message.contains("double NAT"));
+    // Not measured, or no router past ours answered: unknown, never guessed.
+    assert!(wan(&nat(LatencyCheck::default()), "wan-nat").message.starts_with("Carrier-grade NAT: Unknown. Run the audit"));
+    assert!(wan(&nat(LatencyCheck { requested: true, router_ms: Some(3), ..Default::default() }), "wan-nat").message.contains("could not be told"));
+    for latency in [timed(Some(true), 1), LatencyCheck::default()] {
+        assert_eq!(wan(&nat(latency), "wan-nat").severity, Severity::Info);
+    }
+}
+
+#[test]
+fn names_the_ports_upnp_forwards_and_what_that_means_for_reach() {
+    let with = |upnp: UpnpCheck, latency: LatencyCheck| build_findings(&checks(|c| { c.upnp = upnp; c.latency = latency; }));
+    let open = with(forwards(vec![mapping(22, true), mapping(32400, false), mapping(50123, false)]), timed(Some(false), 1));
+    let message = &wan(&open, "wan-forwards").message;
+    assert!(message.contains("22 (SSH), 32400 (Plex), 50123"), "{message}");
+    assert!(message.contains("open to anyone on the internet"));
+
+    let behind = with(forwards(vec![mapping(80, false)]), timed(Some(true), 1));
+    assert!(wan(&behind, "wan-forwards").message.contains("probably not reachable from the internet"));
+    let unknown = with(forwards(vec![mapping(80, false)]), LatencyCheck::default());
+    assert!(wan(&unknown, "wan-forwards").message.contains("If your router has a public address"));
+    assert!(wan(&with(forwards(vec![]), LatencyCheck::default()), "wan-forwards").message.contains("holds no port mappings"));
+    // UPnP that could not be read says nothing about forwards.
+    assert!(find(&build_findings(&checks(|_| {})), "wan-forwards").is_none());
+}
+
+#[test]
+fn a_long_list_of_forwards_is_shortened_and_repeats_are_listed_once() {
+    let many: Vec<_> = (1..=9).map(|i| mapping(40000 + i, false)).chain([mapping(40001, false)]).collect();
+    let message = wan(&build_findings(&checks(|c| c.upnp = forwards(many))), "wan-forwards").message.clone();
+    assert!(message.contains("40001, 40002, 40003, 40004, 40005, 40006 and 3 more"), "{message}");
+}
+
+#[test]
+fn a_global_ipv6_address_is_flagged_only_when_something_makes_it_reachable() {
+    let ipv6 = |global, firewall, open| {
+        build_findings(&checks(|c| c.environment = environment(|e| { e.global_ipv6 = global; e.firewall = firewall; e.open_listener_count = open; })))
+    };
+    let both = ipv6(Some(true), Firewall::Off, Some(2));
+    assert_eq!(wan(&both, "wan-ipv6").severity, Severity::Medium);
+    assert!(wan(&both, "wan-ipv6").message.contains("at least 2 ports on it accept connections and its firewall is off"));
+    assert_eq!(wan(&ipv6(Some(true), Firewall::On, Some(1)), "wan-ipv6").severity, Severity::Low);
+    assert_eq!(wan(&ipv6(Some(true), Firewall::Off, Some(0)), "wan-ipv6").severity, Severity::Low);
+    assert!(find(&ipv6(Some(true), Firewall::On, Some(0)), "wan-ipv6").is_none(), "a firewall on and nothing listening is not a finding");
+    assert!(find(&ipv6(Some(false), Firewall::Off, Some(5)), "wan-ipv6").is_none(), "no IPv6, no direct reach");
+    assert!(find(&ipv6(None, Firewall::Off, Some(5)), "wan-ipv6").is_none());
+    assert!(top_fixes(&both).iter().any(|f| f.contains("IPv6 firewall")));
+}
+
+#[test]
+fn always_explains_how_to_test_from_outside_and_never_claims_a_test_was_made() {
+    let findings = build_findings(&checks(|_| {}));
+    assert!(wan(&findings, "wan-verify").message.contains("mobile data"));
+    assert!(find(&findings, "wan").unwrap().message.contains("WAN exposure was not tested"));
+    let json = serde_json::to_string(&build_findings(&checks(|c| { c.upnp = forwards(vec![mapping(22, true)]); c.latency = timed(Some(false), 1); }))).unwrap().to_lowercase();
+    assert!(!json.contains("exposed to the internet") && !json.contains("internet-exposed"));
+}
+
+#[test]
+fn the_nat_situation_is_noticed_by_watch_mode_and_never_scored() {
+    let before = report_of(checks(|c| c.latency = timed(Some(false), 1)), None);
+    let after = report_of(checks(|c| c.latency = timed(Some(true), 1)), None);
+    assert!(describe_changes(&before, &after).contains(&"Behind carrier-grade NAT: no -> yes".to_string()));
+    assert_eq!(before.score, report_of(checks(|_| {}), None).score);
+}
+

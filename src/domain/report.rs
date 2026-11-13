@@ -97,6 +97,7 @@ fn comparable(report: &Report) -> Vec<(String, Cell)> {
     flat.push(("Wi-Fi standard".into(), text(checks.wifi.speed.standard.map(|s| s.as_str()))));
     flat.push(("Wi-Fi channel width".into(), number(checks.wifi.speed.channel_width_mhz)));
     flat.push(("Same-channel access points".into(), number(checks.wifi.same_channel_count)));
+    flat.push(("Behind carrier-grade NAT".into(), yes_no(checks.latency.carrier_grade_nat)));
     flat.push(("DNS".into(), Cell::Text(effective_dns(checks).as_str().to_string())));
     let env = &checks.environment;
     let resolver = env.resolver_provider.clone().unwrap_or_else(|| format!("{:?}", env.resolver).to_lowercase());

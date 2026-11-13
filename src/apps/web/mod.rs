@@ -201,6 +201,11 @@ fn handle(shared: &Arc<Shared>, mut request: Request, port: u16) {
         Ok(match route.as_str() {
             "GET /api/state" => shared.state(),
             "GET /api/saved" => json!(shared.app.saved_reports.list()),
+            "GET /api/history" => json!(shared.app.history.list()),
+            "POST /api/history/clear" => {
+                shared.app.history.clear();
+                json!(shared.app.history.list())
+            }
             "POST /api/scan" => {
                 shared.scan(dns_field(&input)?, input.get("ispLatency") == Some(&Value::Bool(true)));
                 shared.state()
