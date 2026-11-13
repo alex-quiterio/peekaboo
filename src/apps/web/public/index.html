@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Home Network Privacy Check</title>
+<link rel="stylesheet" href="/styles/tokens.css">
+<link rel="stylesheet" href="/styles/base.css">
+<link rel="stylesheet" href="/styles/layout.css">
+<link rel="stylesheet" href="/styles/controls.css">
+<link rel="stylesheet" href="/styles/score.css">
+<link rel="stylesheet" href="/styles/findings.css">
+<link rel="stylesheet" href="/styles/effects.css">
+</head>
+<body>
+<canvas id="rain" aria-hidden="true"></canvas>
+<main>
+  <header>
+    <div>
+      <h1>Home Network Privacy Check</h1>
+      <p class="muted">Target: <code>&lt;private-gateway&gt;</code> · checked from inside your network</p>
+    </div>
+    <p class="muted" id="last-run"></p>
+  </header>
+
+  <div class="controls">
+    <div class="field">
+      <span>Is your DNS encrypted? The audit cannot see this, so you tell it.</span>
+      <div class="seg" id="dns">
+        <label><input type="radio" name="dns" value="unknown" checked><span>Unknown</span></label>
+        <label><input type="radio" name="dns" value="encrypted"><span>Encrypted</span></label>
+        <label><input type="radio" name="dns" value="plaintext"><span>Plaintext</span></label>
+      </div>
+    </div>
+    <div class="spacer"></div>
+    <button class="ghost" id="watch-btn" type="button">Start 30-minute watch</button>
+    <button id="scan-btn" type="button">Run audit</button>
+  </div>
+
+  <p class="notice" id="notice">WAN exposure was not tested. A port that answers here is reachable from your own network only; this audit says nothing about the internet side.</p>
+
+  <div id="content"></div>
+</main>
+
+<script src="/scripts/dashboard.js"></script>
+<script src="/scripts/rain.js"></script>
+</body>
+</html>
