@@ -5,6 +5,7 @@ import {
   environmentCheckFrom,
   isHardwareDerivedIPv6,
   NO_DEVICE,
+  NO_LATENCY,
   NO_WIFI,
   parseDns,
   securityLabel,
@@ -28,6 +29,7 @@ const wifi = (over: Partial<WifiCheck> = {}): WifiCheck => ({
   sameChannelCount: 0,
   overlappingCount: 0,
   nearbyCount: 12,
+  speed: { linkRateMbps: 866, signalDbm: -50, noiseDbm: -92, signal: "excellent", channelWidthMhz: 80, standard: "Wi-Fi 5" },
   ...over,
 });
 
@@ -51,6 +53,7 @@ const checks = (over: Partial<Checks> = {}): Checks => ({
   wifi: wifiCheckFrom(NO_WIFI),
   dns: { status: "unknown" },
   environment: environment(),
+  latency: NO_LATENCY,
   ...over,
 });
 const allClosed = () => checks().ports.map((p) => ({ ...p, reachable: false }));

@@ -9,6 +9,9 @@ A read-only, privacy-conscious audit of a home network the user owns or administ
 - Never add a target, host, CIDR, public-IP, banner-grabbing, credential, brute-force, exploit, or remote-login option.
 - TCP checks may only connect and immediately close, without sending application data. The only ports are those in `AUDITED_PORTS`.
 - Device checks read this device's own settings and socket table with fixed, read-only commands. They never connect to this device's ports, and they hand over only booleans and counts: no process names, addresses or hardware addresses.
+- Wi-Fi speed is the link rate, signal and channel width this device's own radio reports. Never run a speed test or send traffic to measure throughput. Speed advice is never scored and stays out of `topFixes`.
+- The opt-in ISP delay check (`--isp-latency`, the dashboard checkbox) is the only thing that may send packets past the gateway, and only when the caller passes exactly `true`. It sends hop-limited packets one hop at a time, never beyond `MAX_LATENCY_HOPS`, and stops when the first hop is not the audited gateway or as soon as a non-private hop answers. The direction address is a fixed constant, never input. Hop addresses are used only to tell private from non-private and are never printed or saved; only milliseconds and a hop count are kept. Distance is only ever stated as an upper limit ("no more than about N km of cable"), never as an estimate or a place.
+- Never look up the public IP, geolocate anything, or contact a third-party service.
 - UPnP code may call only `getGateway()` and `getMappings()`. It must never create or delete mappings, call external-IP or connection-control methods, or change router configuration.
 - Never print or save SSIDs, BSSIDs, MAC addresses, device names, raw UPnP descriptions, resolver addresses, or complete private IPs.
 - Save only `sanitized-report.json` and `previous-sanitized-report.json`.
@@ -31,7 +34,7 @@ Dashboard CSS lives in `src/apps/web/public/styles`, one file per concern; colou
 
 ## Commands
 
-- `bun run cli:scan --dns encrypted|plaintext|unknown` runs one audit (`--dns` defaults to `unknown`). About 20 seconds.
+- `bun run cli:scan --dns encrypted|plaintext|unknown [--isp-latency]` runs one audit (`--dns` defaults to `unknown`). About 20 seconds.
 - `bun run cli:watch --dns ...` reruns the audit every 30 minutes and prints only sanitized changes.
 - `bun run web:start` serves the dashboard at http://127.0.0.1:4173 (`web:dev` restarts on change).
 - `bun run check` runs typecheck, lint and tests. Tests use fakes and never touch the network.

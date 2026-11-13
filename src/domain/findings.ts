@@ -1,5 +1,6 @@
 // Explains checks in plain words. A LAN-side result is never described as internet exposure.
 import { effectiveDns } from "./evidence.ts";
+import { latencyFindings, speedFindings, USE_FASTER_BAND } from "./speed.ts";
 import type { Checks, EnvironmentCheck, Finding, PortCheck, Severity, UpnpCheck, WifiCheck } from "./model.ts";
 
 interface PortAdvice {
@@ -147,7 +148,7 @@ function wifiFindings(wifi: WifiCheck): Finding[] {
       id: "band",
       severity: wifi.overlappingCount ? "LOW" : "INFO",
       message: `This device is connected on the 2.4 GHz band, which is slower and more crowded.${overlap}`,
-      ...(wifi.overlappingCount ? { action: "Connect on the 5 GHz or 6 GHz band where your router offers it." } : {}),
+      ...(wifi.overlappingCount ? { action: USE_FASTER_BAND } : {}),
     });
   } else if (wifi.band) {
     findings.push({ id: "band", severity: "INFO", message: `This device is connected on the ${wifi.band} band.` });
@@ -272,6 +273,8 @@ export function buildFindings(checks: Checks): Finding[] {
     ...checks.ports.map(portFinding),
     ...upnpFindings(checks.upnp),
     ...wifiFindings(checks.wifi),
+    ...speedFindings(checks.wifi),
+    ...latencyFindings(checks.latency),
     ...environmentFindings(checks.environment, checks),
     ...deviceFindings(checks),
     {
@@ -284,10 +287,10 @@ export function buildFindings(checks: Checks): Finding[] {
 
 export const SEVERITY_ORDER: Severity[] = ["HIGH", "MEDIUM", "LOW", "INFO"];
 
-/** At most three unique, non-INFO actions, most severe first. */
+/** At most three unique, non-INFO actions, most severe first. Speed advice is listed separately, as speed tips. */
 export function topFixes(findings: Finding[]): string[] {
   const actions = findings
-    .filter((f) => f.severity !== "INFO" && f.action)
+    .filter((f) => f.severity !== "INFO" && f.action && !f.id.startsWith("speed-"))
     .sort((a, b) => SEVERITY_ORDER.indexOf(a.severity) - SEVERITY_ORDER.indexOf(b.severity))
     .map((f) => f.action as string);
   return [...new Set(actions)].slice(0, 3);

@@ -1,10 +1,11 @@
-// CLI: one audit. Usage: bun scan [--dns encrypted|plaintext|unknown]
+// CLI: one audit. Usage: bun scan [--dns encrypted|plaintext|unknown] [--isp-latency]
 import { createAudit } from "@infrastructure/composition.ts";
-import { dnsFromArgs, formatReport, stopSafely } from "./format.ts";
+import { optionsFromArgs, formatReport, stopSafely } from "./format.ts";
 
 try {
   const { runAudit } = createAudit();
-  console.log(formatReport(await runAudit.execute(dnsFromArgs(Bun.argv.slice(2)))));
+  const { dns, ispLatency } = optionsFromArgs(Bun.argv.slice(2));
+  console.log(formatReport(await runAudit.execute(dns, { ispLatency })));
 } catch (error) {
   stopSafely(error);
 }

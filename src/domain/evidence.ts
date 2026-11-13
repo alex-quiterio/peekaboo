@@ -1,6 +1,18 @@
 // Turns raw observations into sanitized checks. Raw values (addresses, adapter strings) stop here.
 import { isPrivateIPv4, redactIPv4, SafetyStop } from "./gateway.ts";
-import type { Checks, DnsStatus, EnvironmentCheck, SecurityClass, UpnpCheck, WifiBand, WifiCheck } from "./model.ts";
+import type {
+  Checks,
+  DnsStatus,
+  EnvironmentCheck,
+  LatencyCheck,
+  SecurityClass,
+  SignalQuality,
+  UpnpCheck,
+  WifiBand,
+  WifiCheck,
+  WifiSpeedCheck,
+  WifiStandard,
+} from "./model.ts";
 
 // ---------- DNS (reported by the user) ----------
 
@@ -29,6 +41,13 @@ export interface WifiObservation {
   sameChannelCount: number | null;
   overlappingCount: number | null;
   nearbyCount: number | null;
+  /** The negotiated link rate, as this device's radio reports it. */
+  linkRateMbps: number | null;
+  signalDbm: number | null;
+  noiseDbm: number | null;
+  channelWidthMhz: number | null;
+  /** The adapter's own description of the standard in use, such as "802.11ax". */
+  standard: unknown;
 }
 
 export const NO_WIFI: WifiObservation = {
@@ -39,6 +58,11 @@ export const NO_WIFI: WifiObservation = {
   sameChannelCount: null,
   overlappingCount: null,
   nearbyCount: null,
+  linkRateMbps: null,
+  signalDbm: null,
+  noiseDbm: null,
+  channelWidthMhz: null,
+  standard: null,
 };
 
 function securityText(raw: unknown): string {
@@ -84,6 +108,51 @@ export function wifiBand(channel: number | null, frequencyMhz: number | null): W
   return channel <= 14 ? "2.4 GHz" : "5 GHz";
 }
 
+/** The newest standard named in an adapter string such as "802.11ax" or "802.11a/n/ac". */
+export function wifiStandard(raw: unknown): WifiStandard | null {
+  if (typeof raw !== "string") return null;
+  const match = /802\.11\s*([a-z/]+)/i.exec(raw);
+  if (!match) return null;
+  const modes = new Set((match[1] ?? "").toLowerCase().split("/"));
+  if (modes.has("be")) return "Wi-Fi 7";
+  if (modes.has("ax")) return "Wi-Fi 6";
+  if (modes.has("ac")) return "Wi-Fi 5";
+  if (modes.has("n")) return "Wi-Fi 4";
+  return ["a", "b", "g"].some((mode) => modes.has(mode)) ? "Legacy" : null;
+}
+
+export function signalQuality(dbm: number | null): SignalQuality | null {
+  if (dbm === null) return null;
+  return dbm >= -55 ? "excellent" : dbm >= -67 ? "good" : dbm >= -75 ? "fair" : "weak";
+}
+
+const CHANNEL_WIDTHS = [20, 40, 80, 160, 320];
+const NO_SPEED: WifiSpeedCheck = {
+  linkRateMbps: null,
+  signalDbm: null,
+  noiseDbm: null,
+  signal: null,
+  channelWidthMhz: null,
+  standard: null,
+};
+
+/** Keeps a reading only when it is a plausible value; anything else is unknown. */
+function wifiSpeedFrom(observation: WifiObservation): WifiSpeedCheck {
+  const dbm = (value: number | null) =>
+    value !== null && Number.isFinite(value) && value < 0 && value > -120 ? Math.round(value) : null;
+  const rate = observation.linkRateMbps;
+  const width = observation.channelWidthMhz;
+  const signalDbm = dbm(observation.signalDbm);
+  return {
+    linkRateMbps: rate !== null && Number.isFinite(rate) && rate > 0 ? Math.round(rate) : null,
+    signalDbm,
+    noiseDbm: dbm(observation.noiseDbm),
+    signal: signalQuality(signalDbm),
+    channelWidthMhz: width !== null && CHANNEL_WIDTHS.includes(width) ? width : null,
+    standard: wifiStandard(observation.standard),
+  };
+}
+
 export function wifiCheckFrom(observation: WifiObservation): WifiCheck {
   if (!observation.connected) {
     return {
@@ -94,6 +163,7 @@ export function wifiCheckFrom(observation: WifiObservation): WifiCheck {
       sameChannelCount: null,
       overlappingCount: null,
       nearbyCount: null,
+      speed: NO_SPEED,
     };
   }
   const security = classifySecurity(observation.security);
@@ -106,7 +176,58 @@ export function wifiCheckFrom(observation: WifiObservation): WifiCheck {
     sameChannelCount: observation.sameChannelCount,
     overlappingCount: observation.overlappingCount,
     nearbyCount: observation.nearbyCount,
+    speed: wifiSpeedFrom(observation),
   };
+}
+
+// ---------- Delay to the ISP (opt-in) ----------
+
+/** The furthest a timing packet may travel. Enough for a mesh or second router in front of the ISP's. */
+export const MAX_LATENCY_HOPS = 4;
+
+/** Who answered a packet that expired after a given number of routers. The address is used for classification only. */
+export interface HopObservation {
+  address: string | null;
+  timesMs: number[];
+}
+
+/** True once a hop outside the home has answered, which is where the measurement must stop. */
+export function isBeyondHome(hop: HopObservation): boolean {
+  return hop.address !== null && !isPrivateIPv4(hop.address);
+}
+
+function median(values: number[]): number | null {
+  const sorted = values.filter((v) => Number.isFinite(v) && v >= 0).sort((a, b) => a - b);
+  if (sorted.length === 0) return null;
+  const middle = Math.floor(sorted.length / 2);
+  const value = sorted.length % 2 ? (sorted[middle] as number) : ((sorted[middle - 1] as number) + (sorted[middle] as number)) / 2;
+  return Math.round(value);
+}
+
+export const NO_LATENCY: LatencyCheck = { requested: false, routerMs: null, ispMs: null, ownHops: null, ispMaxKm: null };
+
+/** Light covers about 200 km of fibre per millisecond, and the delay is a round trip. */
+const KM_PER_ROUND_TRIP_MS = 100;
+
+/**
+ * The farthest the ISP's router can be, from the delay the line adds. Null when the line adds no measurable
+ * delay, because then the limit would read as "0 km", which the evidence does not support.
+ */
+export function maxCableKm(routerMs: number | null, ispMs: number | null): number | null {
+  if (routerMs === null || ispMs === null || ispMs <= routerMs) return null;
+  return (ispMs - routerMs) * KM_PER_ROUND_TRIP_MS;
+}
+
+/** `hops[0]` is the first router on the path. Unless that is the audited gateway, nothing is concluded. */
+export function latencyCheckFrom(requested: boolean, hops: HopObservation[], gateway: string): LatencyCheck {
+  if (!requested) return NO_LATENCY;
+  const unknown: LatencyCheck = { ...NO_LATENCY, requested: true };
+  const router = hops[0];
+  if (!router || router.address !== gateway) return unknown;
+  const routerMs = median(router.timesMs);
+  const ispIndex = hops.findIndex((hop, i) => i > 0 && isBeyondHome(hop));
+  const ispMs = ispIndex < 0 ? null : median((hops[ispIndex] as HopObservation).timesMs);
+  return { requested: true, routerMs, ispMs, ownHops: ispMs === null ? null : ispIndex, ispMaxKm: maxCableKm(routerMs, ispMs) };
 }
 
 // ---------- UPnP ----------

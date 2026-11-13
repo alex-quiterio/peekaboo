@@ -5,14 +5,18 @@ import { SEVERITY_ORDER } from "@domain/findings.ts";
 import { SafetyStop } from "@domain/gateway.ts";
 import type { DnsStatus, Report } from "@domain/model.ts";
 
-/** The only flag is --dns. Anything else, including any kind of target, is rejected. */
-export function dnsFromArgs(argv: string[]): DnsStatus {
+/** The only flags are --dns and --isp-latency. Anything else, including any kind of target, is rejected. */
+export function optionsFromArgs(argv: string[]): { dns: DnsStatus; ispLatency: boolean } {
   try {
-    const { values } = parseArgs({ args: argv, options: { dns: { type: "string" } }, strict: true });
-    return parseDns(values.dns);
+    const { values } = parseArgs({
+      args: argv,
+      options: { dns: { type: "string" }, "isp-latency": { type: "boolean" } },
+      strict: true,
+    });
+    return { dns: parseDns(values.dns), ispLatency: values["isp-latency"] === true };
   } catch (error) {
     if (error instanceof SafetyStop) throw error;
-    throw new SafetyStop("The only option is --dns encrypted|plaintext|unknown.");
+    throw new SafetyStop("The only options are --dns encrypted|plaintext|unknown and --isp-latency.");
   }
 }
 
@@ -37,6 +41,9 @@ export function formatReport(report: Report): string {
   }
   if (report.topFixes.length) {
     lines.push("", "Top fixes:", ...report.topFixes.map((fix, i) => `  ${i + 1}. ${fix}`));
+  }
+  if (report.speedTips.length) {
+    lines.push("", "Make the Wi-Fi faster:", ...report.speedTips.map((tip, i) => `  ${i + 1}. ${tip}`));
   }
   lines.push("", "Saved sanitized-report.json");
   return lines.join("\n");

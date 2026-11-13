@@ -1,7 +1,7 @@
 // What the domain needs from the outside world. Infrastructure implements these; nothing here does I/O.
 // ("Ports" in the hexagonal sense. TCP ports live in scoring.ts.)
 import type { NeighbourObservation, SelfObservation } from "./devices.ts";
-import type { EnvironmentObservation, UpnpObservation, WifiObservation } from "./evidence.ts";
+import type { EnvironmentObservation, HopObservation, UpnpObservation, WifiObservation } from "./evidence.ts";
 import type { DefaultRoute } from "./gateway.ts";
 import type { Report } from "./model.ts";
 
@@ -27,6 +27,14 @@ export interface WifiInspector {
 export interface EnvironmentInspector {
   /** Reads this device's own settings. Sends nothing over the network. */
   inspect(): Promise<EnvironmentObservation>;
+}
+
+export interface LatencyProbe {
+  /**
+   * Sends a few packets that expire after `hops` routers and reports who answered and how quickly. The packets
+   * carry no data and are never meant to arrive. Must refuse more than MAX_LATENCY_HOPS, and takes no destination.
+   */
+  probe(hops: number): Promise<HopObservation | null>;
 }
 
 export interface NeighbourDiscovery {

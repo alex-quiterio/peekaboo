@@ -1,5 +1,6 @@
 /* Score card (ring, before/after, coverage bar) and the top-fixes list. */
-.score { display: flex; gap: 20px; align-items: center; }
+.score { display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: center; }
+.score > div { flex: 1; min-width: 150px; }
 
 .ring { width: 124px; height: 124px; flex: none; }
 .ring circle { fill: none; stroke-width: 10; }

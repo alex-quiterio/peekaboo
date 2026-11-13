@@ -11,9 +11,14 @@ const COMMAND_TIMEOUT_MS = 3000;
 const MAC_FIREWALL_TOOL = "/usr/libexec/ApplicationFirewall/socketfilterfw";
 
 /** Runs a fixed, read-only command. Returns null when it is missing, fails or times out. */
-function read(file: string, args: string[], emptyExitCode?: number): Promise<string | null> {
+export function read(
+  file: string,
+  args: string[],
+  emptyExitCode?: number,
+  timeoutMs = COMMAND_TIMEOUT_MS,
+): Promise<string | null> {
   return new Promise((resolve) => {
-    execFile(file, args, { timeout: COMMAND_TIMEOUT_MS }, (error, stdout) => {
+    execFile(file, args, { timeout: timeoutMs }, (error, stdout) => {
       if (!error) return resolve(stdout);
       resolve(emptyExitCode !== undefined && error.code === emptyExitCode ? "" : null);
     });

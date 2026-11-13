@@ -4,6 +4,8 @@ export type DnsStatus = "encrypted" | "plaintext" | "unknown";
 export type Severity = "HIGH" | "MEDIUM" | "LOW" | "INFO";
 export type SecurityClass = "strong" | "weak" | "review" | "unknown";
 export type WifiBand = "2.4 GHz" | "5 GHz" | "6 GHz";
+export type WifiStandard = "Wi-Fi 7" | "Wi-Fi 6" | "Wi-Fi 5" | "Wi-Fi 4" | "Legacy";
+export type SignalQuality = "excellent" | "good" | "fair" | "weak";
 export type ResolverKind = "gateway" | "private" | "local" | "public" | "unknown";
 
 export interface PortCheck {
@@ -29,6 +31,17 @@ export interface UpnpCheck {
   mappings: SanitizedMapping[];
 }
 
+/** How fast the radio link between this device and its access point is. Read from this device; nothing is sent. */
+export interface WifiSpeedCheck {
+  /** The rate the radio has negotiated. A ceiling, not a measured throughput. */
+  linkRateMbps: number | null;
+  signalDbm: number | null;
+  noiseDbm: number | null;
+  signal: SignalQuality | null;
+  channelWidthMhz: number | null;
+  standard: WifiStandard | null;
+}
+
 export interface WifiCheck {
   state: "known" | "partial" | "unknown";
   security: SecurityClass;
@@ -38,6 +51,7 @@ export interface WifiCheck {
   /** Access points on neighbouring, overlapping channels. Only meaningful on 2.4 GHz. */
   overlappingCount: number | null;
   nearbyCount: number | null;
+  speed: WifiSpeedCheck;
 }
 
 /** Evidence read from this device, not from the network. */
@@ -58,12 +72,24 @@ export interface EnvironmentCheck {
   ipv6FromHardwareAddress: boolean | null;
 }
 
+/** Round-trip delay to this network's own router and to the first router past it. Opt-in; no address is kept. */
+export interface LatencyCheck {
+  requested: boolean;
+  routerMs: number | null;
+  ispMs: number | null;
+  /** Routers of your own between this device and the ISP. 1 means just the default gateway. */
+  ownHops: number | null;
+  /** The most cable there can be between the user's router and the ISP's. An upper limit, never an estimate. */
+  ispMaxKm: number | null;
+}
+
 export interface Checks {
   ports: PortCheck[];
   upnp: UpnpCheck;
   wifi: WifiCheck;
   dns: { status: DnsStatus };
   environment: EnvironmentCheck;
+  latency: LatencyCheck;
 }
 
 export interface ScoreLine {
@@ -104,6 +130,8 @@ export interface Report {
   score: Score;
   findings: Finding[];
   topFixes: string[];
+  /** Ways to make the Wi-Fi faster. Kept apart from topFixes, which are about privacy. */
+  speedTips: string[];
   privacy: string[];
   comparison?: Comparison;
 }

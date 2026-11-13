@@ -4,6 +4,7 @@ import { buildFindings, topFixes } from "./findings.ts";
 import { TARGET_PLACEHOLDER } from "./gateway.ts";
 import type { Checks, Comparison, Report, Score } from "./model.ts";
 import { scoreChecks } from "./scoring.ts";
+import { speedTips } from "./speed.ts";
 
 export function compare(previous: Report | null, current: Score): Comparison | undefined {
   const before = previous?.score?.provisional;
@@ -27,11 +28,16 @@ export function buildReport(
     score,
     findings,
     topFixes: topFixes(findings),
+    speedTips: speedTips(findings),
     privacy: [
       "Only the private default gateway detected by the operating system was checked, plus this device's own network settings.",
       "No SSIDs, BSSIDs, MAC addresses, device names, UPnP descriptions or complete IP addresses are stored.",
       "Port checks connect and close without sending data. UPnP is read-only.",
       "Device checks read this device's own settings. They send nothing and store only yes/no answers and counts.",
+      "Wi-Fi speed is the link rate this device's own radio reports. No speed test was run and nothing was sent to measure it.",
+      ...(checks.latency.requested
+        ? ["Delay to your ISP was timed, at your request, with a few empty packets that expire at the first router past your own. No address or location was looked up or stored."]
+        : []),
       "WAN exposure was not tested.",
     ],
     ...(comparison ? { comparison } : {}),
@@ -53,6 +59,8 @@ function comparable(report: Report): Record<string, string | number | null> {
   flat["Wi-Fi security"] = checks.wifi.securityMode ?? checks.wifi.security;
   flat["Wi-Fi band"] = checks.wifi.band;
   flat["Same-channel access points"] = checks.wifi.sameChannelCount;
+  flat["Wi-Fi standard"] = checks.wifi.speed.standard;
+  flat["Wi-Fi channel width"] = checks.wifi.speed.channelWidthMhz;
   flat["DNS"] = effectiveDns(checks);
   flat["DNS resolver"] = checks.environment.resolverProvider ?? checks.environment.resolver;
   flat["Global IPv6"] = checks.environment.globalIpv6 === null ? null : checks.environment.globalIpv6 ? "yes" : "no";

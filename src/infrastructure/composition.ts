@@ -2,6 +2,7 @@
 import path from "node:path";
 import { ListDevices } from "@application/list-devices.ts";
 import { RunAudit } from "@application/run-audit.ts";
+import { TracerouteLatencyProbe } from "./latency.ts";
 import { JsonReportRepository } from "./json-report-repository.ts";
 import { SystemNeighbourDiscovery } from "./neighbours.ts";
 import {
@@ -21,6 +22,7 @@ export function createAudit() {
     upnp: new NatUpnpInspector(),
     wifi: new SystemWifiInspector(),
     environment: new SystemEnvironmentInspector(),
+    latency: new TracerouteLatencyProbe(),
     reports,
     platform: process.platform,
   });

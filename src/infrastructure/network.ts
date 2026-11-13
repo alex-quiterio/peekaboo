@@ -8,6 +8,7 @@ import { NO_WIFI, type EnvironmentObservation, type UpnpObservation, type WifiOb
 import type { DefaultRoute } from "@domain/gateway.ts";
 import type { EnvironmentInspector, GatewayLocator, PortProbe, UpnpInspector, WifiInspector } from "@domain/ports.ts";
 import { readDevice } from "./device.ts";
+import { readMacWifiLink } from "./wifi-link.ts";
 
 const TCP_TIMEOUT_MS = 800;
 const UPNP_TIMEOUT_MS = 3000;
@@ -68,7 +69,8 @@ export class SystemWifiInspector implements WifiInspector {
   /** SSIDs and BSSIDs are used here only to leave our own access point out of the counts; they never leave this method. */
   async inspect(): Promise<WifiObservation> {
     try {
-      const connection = (await si.wifiConnections())[0];
+      const [connections, link] = await Promise.all([si.wifiConnections(), readMacWifiLink()]);
+      const connection = connections[0];
       if (!connection) return NO_WIFI;
 
       const channel = Number(connection.channel);
@@ -79,6 +81,11 @@ export class SystemWifiInspector implements WifiInspector {
         security: connection.security,
         channel: hasChannel ? channel : null,
         frequencyMhz: Number(connection.frequency) || null,
+        linkRateMbps: Number(connection.txRate) || link.linkRateMbps,
+        signalDbm: Number(connection.signalLevel) || link.signalDbm,
+        noiseDbm: link.noiseDbm,
+        channelWidthMhz: link.channelWidthMhz,
+        standard: connection.type || link.standard,
       };
       const bssid = String(connection.bssid ?? "").toLowerCase();
       // macOS hands out "<redacted>" for every network name without Location permission. A redacted

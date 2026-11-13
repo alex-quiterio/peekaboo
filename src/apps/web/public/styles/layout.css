@@ -43,5 +43,8 @@ section.card { margin-top: 16px; }
 .notice.error { background: var(--high-bg); color: var(--high); }
 
 @media (max-width: 720px) {
+  main { padding: 16px 12px 40px; }
   .grid { grid-template-columns: minmax(0, 1fr); }
+  .card { padding: 14px; }
+  .notice { margin-bottom: 14px; }
 }

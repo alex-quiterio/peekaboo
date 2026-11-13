@@ -1,16 +1,16 @@
 // CLI: rerun the audit every 30 minutes. Prints a baseline, then only changes. Control-C to stop.
 import { WATCH_INTERVAL_MS, WatchSession } from "@application/watch-session.ts";
 import { createAudit } from "@infrastructure/composition.ts";
-import { dnsFromArgs, formatReport, stopSafely } from "./format.ts";
+import { optionsFromArgs, formatReport, stopSafely } from "./format.ts";
 
 try {
-  const dns = dnsFromArgs(Bun.argv.slice(2));
+  const { dns, ispLatency } = optionsFromArgs(Bun.argv.slice(2));
   const { runAudit } = createAudit();
   const session = new WatchSession();
 
   const tick = async () => {
     try {
-      const report = await runAudit.execute(dns);
+      const report = await runAudit.execute(dns, { ispLatency });
       const event = session.observe(report);
       if (event?.kind === "baseline") {
         console.log(formatReport(report));

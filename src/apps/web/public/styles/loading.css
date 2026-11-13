@@ -1,0 +1,28 @@
+/* Audit in progress: a moving bar above the results, and the old results dimmed until new ones arrive. */
+.progress {
+  margin: 0 0 20px;
+  padding: 10px 14px;
+  color: var(--ink);
+  background: var(--info-bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+.progress[hidden] { display: none; }
+.progress .bar { position: relative; margin-bottom: 0; }
+.progress .bar i {
+  position: absolute;
+  width: 30%;
+  box-shadow: var(--glow);
+  animation: sweep 1.4s ease-in-out infinite alternate;
+}
+@keyframes sweep {
+  from { left: 0; }
+  to { left: 70%; }
+}
+
+#content { transition: opacity 0.2s ease; }
+#content.loading { opacity: 0.35; cursor: progress; }
+
+@media (prefers-reduced-motion: reduce) {
+  .progress .bar i { animation: none; width: 100%; opacity: 0.6; }
+}

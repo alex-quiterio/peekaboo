@@ -16,6 +16,7 @@ function h(tag, attrs, ...children) {
 const SEVERITY = ["HIGH", "MEDIUM", "LOW", "INFO"];
 const time = (iso) => new Date(iso).toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
 const selectedDns = () => document.querySelector('input[name="dns"]:checked').value;
+const selectedOptions = () => ({ dns: selectedDns(), ispLatency: $("isp-latency").checked });
 
 function ring(score) {
   const r = 52, c = 2 * Math.PI * r;
@@ -71,21 +72,94 @@ function fixesCard(report) {
       : null);
 }
 
+// Reports saved before the speed check existed have no speed fields; the card then asks for a new audit.
+function speedCard(report) {
+  const speed = report.checks.wifi.speed;
+  const tips = report.speedTips || [];
+  if (!speed) {
+    return h("section", { class: "card" }, h("h2", {}, "Wi-Fi speed"),
+      h("p", { class: "muted" }, "Run the audit again to measure the Wi-Fi link."));
+  }
+  const stat = (label, value, unit) => h("div", { class: "stat" },
+    h("div", { class: "muted" }, label),
+    h("div", { class: "value" }, value === null ? "Unknown" : value, value !== null && unit ? h("small", {}, ` ${unit}`) : null));
+  const latency = report.checks.latency;
+  return h("section", { class: "card" },
+    h("h2", {}, "Wi-Fi speed"),
+    h("p", { class: "muted lead" },
+      "The link between this device and the router, as this device's radio reports it. Real speed is about half " +
+      "the link rate. No speed test is run, so your internet plan's speed is not shown. " +
+      (latency && latency.requested ? "" : "Switch on the delay option above to also time the first router on your ISP's side.")),
+    h("div", { class: "stats" },
+      stat("Link rate", speed.linkRateMbps, "Mbps"),
+      stat("Signal", speed.signalDbm, `dBm · ${speed.signal}`),
+      stat("Standard", speed.standard),
+      stat("Band", report.checks.wifi.band),
+      stat("Channel width", speed.channelWidthMhz, "MHz"),
+      latency && latency.requested ? [stat("Delay to router", latency.routerMs, "ms"), stat("Delay to ISP", latency.ispMs, "ms"),
+        stat("ISP router within", latency.ispMaxKm ?? null, "km at most")] : null),
+    h("h3", {}, "Make it faster"),
+    tips.length
+      ? h("ol", { class: "fixes" }, tips.map((tip) => h("li", {}, h("span", {}, tip))))
+      : h("p", { class: "muted" }, speed.linkRateMbps === null
+          ? "Nothing to suggest without a link rate."
+          : "Nothing to suggest: no setting or signal problem was found."));
+}
+
+// Which findings are open. Kept here because the page is redrawn on every refresh.
+const openFindings = new Set();
+
+/** The first sentence is the headline; the rest is shown when the finding is opened. */
+function splitMessage(message) {
+  const end = message.search(/\.\s/);
+  return end < 0 ? [message, ""] : [message.slice(0, end + 1), message.slice(end + 2)];
+}
+
+function findingRow(f, line) {
+  const [title, rest] = splitMessage(f.message);
+  const points = !line ? h("div", { class: "points" }) : line.earned === null
+    ? h("div", { class: "points muted" }, "not scored", h("small", {}, `of ${line.weight}`))
+    : h("div", { class: "points" }, `${line.earned} / ${line.weight}`, h("small", {}, "points"));
+  const head = [h("span", { class: `badge ${f.severity}` }, f.severity), h("div", { class: "title" }, title), points];
+  if (!rest && !f.action) return h("div", { class: "finding" }, h("div", { class: "row" }, head, h("span", { class: "chev" })));
+
+  const details = h("details", { class: "finding", "data-id": f.id },
+    h("summary", { class: "row" }, head, h("span", { class: "chev", "aria-hidden": "true" })),
+    h("div", { class: "more" },
+      rest ? h("p", {}, rest) : null,
+      f.action ? h("p", { class: "action" }, h("strong", {}, "Fix: "), f.action) : null));
+  details.open = openFindings.has(f.id);
+  details.addEventListener("toggle", () => {
+    if (details.open) openFindings.add(f.id); else openFindings.delete(f.id);
+    syncToggleAll();
+  });
+  return details;
+}
+
+function syncToggleAll() {
+  const button = $("findings-toggle");
+  if (!button) return;
+  const all = [...document.querySelectorAll("details.finding")];
+  const everyOpen = all.length > 0 && all.every((d) => d.open);
+  button.textContent = everyOpen ? "Collapse all" : "Expand all";
+  button.dataset.open = everyOpen;
+}
+
 function findingsCard(report) {
   const lines = Object.fromEntries(report.score.breakdown.map((line) => [line.id, line]));
   const sorted = [...report.findings].sort((a, b) => SEVERITY.indexOf(a.severity) - SEVERITY.indexOf(b.severity));
+  const toggle = h("button", { class: "ghost small", type: "button", id: "findings-toggle" }, "Expand all");
+  toggle.addEventListener("click", () => {
+    const open = toggle.dataset.open !== "true";
+    for (const d of document.querySelectorAll("details.finding")) {
+      d.open = open;
+      if (open) openFindings.add(d.dataset.id); else openFindings.delete(d.dataset.id);
+    }
+    syncToggleAll();
+  });
   return h("section", { class: "card" },
-    h("h2", {}, "Findings"),
-    sorted.map((f) => {
-      const line = lines[f.id];
-      const points = !line ? null : line.earned === null
-        ? h("div", { class: "points muted" }, "not scored", h("small", {}, `of ${line.weight}`))
-        : h("div", { class: "points" }, `${line.earned} / ${line.weight}`, h("small", {}, "points"));
-      return h("div", { class: "finding" },
-        h("span", { class: `badge ${f.severity}` }, f.severity),
-        h("div", {}, h("div", {}, f.message), f.action ? h("div", { class: "action" }, `Fix: ${f.action}`) : null),
-        points);
-    }));
+    h("div", { class: "card-head" }, h("h2", {}, "Findings"), toggle),
+    h("div", { class: "findings" }, sorted.map((f) => findingRow(f, lines[f.id]))));
 }
 
 function mappingsCard(report) {
@@ -170,11 +244,20 @@ function watchCard(watch) {
       h("ul", {}, e.lines.map((line) => h("li", {}, line))))));
 }
 
+// While an audit runs, the old results are dimmed and locked so they are not mistaken for new ones.
+function setLoading(on) {
+  $("progress").hidden = !on;
+  $("content").classList.toggle("loading", on);
+  $("content").toggleAttribute("inert", on);
+  $("content").setAttribute("aria-busy", String(on));
+}
+
 function render(state) {
   const { report, watch, scanning, error } = state;
   const content = $("content");
   content.replaceChildren();
 
+  setLoading(scanning);
   $("scan-btn").disabled = scanning;
   $("scan-btn").textContent = scanning ? "Auditing… (about 20 seconds)" : report ? "Run audit again" : "Run audit";
   $("watch-btn").textContent = watch.enabled ? "Stop watch" : "Start 30-minute watch";
@@ -191,11 +274,13 @@ function render(state) {
   }
   content.append(
     h("div", { class: "grid" }, scoreCard(report), fixesCard(report)),
+    speedCard(report),
     findingsCard(report),
     devicesCard(),
     ...[mappingsCard(report), watchCard(watch)].filter(Boolean),
     h("section", { class: "card" }, h("h2", {}, "Privacy"),
       h("ul", { class: "privacy" }, report.privacy.map((line) => h("li", {}, line)))));
+  syncToggleAll();
 }
 
 async function call(path, payload) {
@@ -215,6 +300,8 @@ async function refresh(path = "/api/state", payload) {
     if (!dnsSynced && state.report) {
       const input = document.querySelector(`input[name="dns"][value="${state.report.checks.dns.status}"]`);
       if (input) input.checked = true;
+      const timed = state.report.checks.latency && state.report.checks.latency.requested;
+      document.querySelector(`input[name="isp"][value="${timed ? "on" : "off"}"]`).checked = true;
       dnsSynced = true;
     }
     render(state);
@@ -224,16 +311,18 @@ async function refresh(path = "/api/state", payload) {
     $("content").replaceChildren(h("p", { class: "notice error" },
       `Could not reach the local audit server. Is "bun start" still running? (${err.message})`));
     $("scan-btn").disabled = false;
+    setLoading(false);
   }
 }
 
 $("scan-btn").addEventListener("click", () => {
   $("scan-btn").disabled = true;
   $("scan-btn").textContent = "Auditing… (about 20 seconds)";
-  refresh("/api/scan", { dns: selectedDns() });
+  setLoading(true);
+  refresh("/api/scan", selectedOptions());
 });
 $("watch-btn").addEventListener("click", () => {
-  refresh("/api/watch", { enabled: $("watch-btn").dataset.enabled !== "true", dns: selectedDns() });
+  refresh("/api/watch", { enabled: $("watch-btn").dataset.enabled !== "true", ...selectedOptions() });
 });
 
 refresh();

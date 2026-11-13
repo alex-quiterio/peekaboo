@@ -22,6 +22,7 @@ const { runAudit, listDevices, reports } = createAudit();
 const watch = {
   session: null as WatchSession | null,
   dns: "unknown" as DnsStatus,
+  ispLatency: false,
   timer: null as ReturnType<typeof setInterval> | null,
   nextRunAt: null as string | null,
   events: [] as WatchEvent[],
@@ -31,9 +32,9 @@ let running: Promise<Report> | null = null;
 let lastError: string | null = null;
 
 /** One audit at a time; concurrent callers share the run in flight. */
-function scan(dns: DnsStatus): Promise<Report> {
+function scan(dns: DnsStatus, ispLatency: boolean): Promise<Report> {
   running ??= runAudit
-    .execute(dns)
+    .execute(dns, { ispLatency })
     .then((report) => {
       lastError = null;
       const event = watch.session?.observe(report);
@@ -55,7 +56,7 @@ function scan(dns: DnsStatus): Promise<Report> {
   return running;
 }
 
-function setWatch(enabled: boolean, dns: DnsStatus) {
+function setWatch(enabled: boolean, dns: DnsStatus, ispLatency: boolean) {
   if (watch.timer) clearInterval(watch.timer);
   watch.timer = null;
   watch.session = null;
@@ -63,10 +64,11 @@ function setWatch(enabled: boolean, dns: DnsStatus) {
   if (!enabled) return;
 
   watch.dns = dns;
+  watch.ispLatency = ispLatency;
   watch.session = new WatchSession();
   const tick = () => {
     watch.nextRunAt = new Date(Date.now() + WATCH_INTERVAL_MS).toISOString();
-    scan(watch.dns).catch(() => {});
+    scan(watch.dns, watch.ispLatency).catch(() => {});
   };
   watch.timer = setInterval(tick, WATCH_INTERVAL_MS);
   tick();
@@ -115,13 +117,13 @@ const server = Bun.serve({
     try {
       if (route === "GET /api/state") return Response.json(await state());
       if (route === "POST /api/scan") {
-        const dns = parseDns((await body(req)).dns);
-        await scan(dns).catch(() => {});
+        const input = await body(req);
+        await scan(parseDns(input.dns), input.ispLatency === true).catch(() => {});
         return Response.json(await state());
       }
       if (route === "POST /api/watch") {
         const input = await body(req);
-        setWatch(input.enabled === true, parseDns(input.dns));
+        setWatch(input.enabled === true, parseDns(input.dns), input.ispLatency === true);
         return Response.json(await state());
       }
       // The device list goes to the page that asked and nowhere else: not into state, a file or the log.

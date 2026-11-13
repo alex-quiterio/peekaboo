@@ -1,0 +1,19 @@
+/* Wi-Fi speed card: the row of link figures above the tips list. */
+.stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px 20px;
+  margin-bottom: 18px;
+}
+.stat { padding-left: 12px; border-left: 2px solid var(--line); }
+.stat .value { font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; text-shadow: var(--glow); }
+.stat .value small { font-size: 13px; font-weight: 400; color: var(--muted); text-shadow: none; }
+
+.card h3 {
+  margin: 0 0 10px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
