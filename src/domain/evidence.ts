@@ -1,6 +1,6 @@
 // Turns raw observations into sanitized checks. Raw values (addresses, adapter strings) stop here.
 import { isPrivateIPv4, redactIPv4, SafetyStop } from "./gateway.ts";
-import type { DnsStatus, EnvironmentCheck, SecurityClass, UpnpCheck, WifiBand, WifiCheck } from "./model.ts";
+import type { Checks, DnsStatus, EnvironmentCheck, SecurityClass, UpnpCheck, WifiBand, WifiCheck } from "./model.ts";
 
 // ---------- DNS (reported by the user) ----------
 
@@ -8,6 +8,14 @@ export function parseDns(value: unknown): DnsStatus {
   if (value === undefined || value === null || value === "") return "unknown";
   if (value === "encrypted" || value === "plaintext" || value === "unknown") return value;
   throw new SafetyStop("--dns must be encrypted, plaintext, or unknown.");
+}
+
+/**
+ * The DNS status the evidence supports. A reported "encrypted" stands only while no tunnel is connected:
+ * a tunnel can take over DNS and send lookups around an encrypted-DNS profile.
+ */
+export function effectiveDns(checks: Pick<Checks, "dns" | "environment">): DnsStatus {
+  return checks.dns.status === "encrypted" && checks.environment.tunnelActive ? "unknown" : checks.dns.status;
 }
 
 // ---------- Wi-Fi ----------
@@ -140,10 +148,39 @@ export function upnpCheckFrom(observation: UpnpObservation): UpnpCheck {
 
 // ---------- This device's environment ----------
 
-export interface EnvironmentObservation {
+/** What this device says about itself. Booleans and counts only: no names, addresses or hardware addresses. */
+export interface DeviceObservation {
+  tunnelActive: boolean | null;
+  firewall: { enabled: boolean; stealth: boolean | null } | null;
+  openListenerCount: number | null;
+  hardwareAddressRandomised: boolean | null;
+  ipv6FromHardwareAddress: boolean | null;
+}
+
+export const NO_DEVICE: DeviceObservation = {
+  tunnelActive: null,
+  firewall: null,
+  openListenerCount: null,
+  hardwareAddressRandomised: null,
+  ipv6FromHardwareAddress: null,
+};
+
+export interface EnvironmentObservation extends DeviceObservation {
   /** Resolver addresses as configured on this device. Used for classification only, never stored. */
   resolvers: string[];
   globalIpv6: boolean | null;
+}
+
+/** True when an IPv6 address embeds the hardware address (EUI-64: "ff:fe" in the middle of the interface half). */
+export function isHardwareDerivedIPv6(address: string): boolean {
+  const [head = "", tail] = (address.split("%")[0] ?? "").split("::");
+  const left = head ? head.split(":") : [];
+  const right = tail ? tail.split(":") : [];
+  const groups =
+    tail === undefined ? left : [...left, ...Array<string>(Math.max(0, 8 - left.length - right.length)).fill("0"), ...right];
+  if (groups.length !== 8) return false;
+  const group = (i: number) => (groups[i] ?? "").padStart(4, "0").toLowerCase();
+  return group(5).endsWith("ff") && group(6).startsWith("fe");
 }
 
 const PUBLIC_RESOLVERS: Record<string, string> = {
@@ -161,7 +198,16 @@ const PUBLIC_RESOLVERS: Record<string, string> = {
 
 export function environmentCheckFrom(observation: EnvironmentObservation, gateway: string): EnvironmentCheck {
   const first = observation.resolvers[0];
-  const base = { resolverProvider: null, globalIpv6: observation.globalIpv6 };
+  const base: Omit<EnvironmentCheck, "resolver"> = {
+    resolverProvider: null,
+    globalIpv6: observation.globalIpv6,
+    tunnelActive: observation.tunnelActive,
+    firewall: observation.firewall === null ? "unknown" : observation.firewall.enabled ? "on" : "off",
+    stealthMode: observation.firewall?.stealth ?? null,
+    openListenerCount: observation.openListenerCount,
+    privateHardwareAddress: observation.hardwareAddressRandomised,
+    ipv6FromHardwareAddress: observation.ipv6FromHardwareAddress,
+  };
   if (!first) return { ...base, resolver: "unknown" };
   if (first === gateway) return { ...base, resolver: "gateway" };
   if (/^127\.|^::1$/.test(first)) return { ...base, resolver: "local" };

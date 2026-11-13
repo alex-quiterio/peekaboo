@@ -1,4 +1,5 @@
 // Explains checks in plain words. A LAN-side result is never described as internet exposure.
+import { effectiveDns } from "./evidence.ts";
 import type { Checks, EnvironmentCheck, Finding, PortCheck, Severity, UpnpCheck, WifiCheck } from "./model.ts";
 
 interface PortAdvice {
@@ -164,8 +165,16 @@ function environmentFindings(environment: EnvironmentCheck, checks: Checks): Fin
       message: "DNS lookups are sent in plaintext, so your ISP can read which sites you look up.",
       action: "Enable encrypted DNS (DoH or DoT) on the router or your devices.",
     });
-  } else if (checks.dns.status === "encrypted") {
+  } else if (effectiveDns(checks) === "encrypted") {
     findings.push({ id: "dns", severity: "INFO", message: "DNS is encrypted (as you reported)." });
+  } else if (checks.dns.status === "encrypted") {
+    findings.push({
+      id: "dns",
+      severity: "LOW",
+      message:
+        "DNS: Unknown. You reported encrypted DNS, but a VPN or tunnel is connected alongside your normal connection. A tunnel can take over DNS and send lookups around an encrypted-DNS profile, in plaintext.",
+      action: "Check your DNS with the tunnel connected, or set an encrypted resolver in the tunnel's own DNS settings.",
+    });
   } else {
     findings.push({
       id: "dns",
@@ -174,11 +183,15 @@ function environmentFindings(environment: EnvironmentCheck, checks: Checks): Fin
     });
   }
 
+  const provider = environment.resolverProvider ?? "a public resolver";
   const resolver: Record<EnvironmentCheck["resolver"], string> = {
     gateway: "This device sends its DNS lookups to the router, which usually forwards them to your ISP's resolver. Whether that hop is encrypted depends on the router's DNS settings.",
     private: "This device sends its DNS lookups to another device on your network (for example a local filter or resolver).",
     local: "This device sends its DNS lookups to a resolver running on the device itself (for example a VPN or encrypted-DNS app).",
-    public: `This device sends its DNS lookups straight to ${environment.resolverProvider ?? "a public resolver"} rather than to the router. Unless they are encrypted, your ISP can still read them in transit.`,
+    public:
+      effectiveDns(checks) === "encrypted"
+        ? `This device's network settings name ${provider} as the resolver. Encrypted DNS overrides that setting; if it is ever removed, lookups go to ${provider} in plaintext.`
+        : `This device sends its DNS lookups straight to ${provider} rather than to the router. Unless they are encrypted, your ISP can still read them in transit.`,
     unknown: "DNS resolver: Unknown. No resolver configuration could be read from this device.",
   };
   findings.push({ id: "resolver", severity: "INFO", message: resolver[environment.resolver] });
@@ -192,6 +205,65 @@ function environmentFindings(environment: EnvironmentCheck, checks: Checks): Fin
   } else if (environment.globalIpv6 === false) {
     findings.push({ id: "ipv6", severity: "INFO", message: "This device has no global IPv6 address." });
   }
+  if (environment.ipv6FromHardwareAddress) {
+    findings.push({
+      id: "ipv6-privacy",
+      severity: "LOW",
+      message: "This device's IPv6 address is built from its hardware address, so websites can recognise the device on any network.",
+      action: "Enable IPv6 privacy (temporary) addresses on this device.",
+    });
+  }
+  return findings;
+}
+
+/** Findings about this device rather than the router. */
+function deviceFindings({ environment, wifi, dns }: Checks): Finding[] {
+  const findings: Finding[] = [];
+
+  if (environment.tunnelActive && dns.status !== "encrypted") {
+    findings.push({
+      id: "tunnel",
+      severity: "INFO",
+      message:
+        "A VPN or tunnel is connected alongside your normal connection. Only traffic for the tunnel's own network goes through it; the rest stays visible to your ISP, and the tunnel may choose this device's DNS.",
+    });
+  }
+
+  const open = environment.openListenerCount;
+  const listening =
+    open === null
+      ? ""
+      : open === 0
+        ? " No app on this device was seen accepting connections from the network."
+        : ` At least ${open} port${open === 1 ? "" : "s"} on this device accept${open === 1 ? "s" : ""} connections from the network.`;
+  if (environment.firewall === "off") {
+    findings.push({
+      id: "firewall",
+      severity: open ? "MEDIUM" : "LOW",
+      message: `This device's firewall is off, so anything it runs can be reached by every device on the network.${listening}`,
+      action: "Turn on this device's firewall in its network settings.",
+    });
+  } else if (environment.firewall === "on") {
+    const stealth =
+      environment.stealthMode === false ? " Stealth mode is off; turning it on stops this device answering probes." : "";
+    findings.push({ id: "firewall", severity: "INFO", message: `This device's firewall is on.${stealth}${listening}` });
+  } else {
+    findings.push({
+      id: "firewall",
+      severity: "INFO",
+      message: `Device firewall: Unknown. It could not be read on this operating system.${listening}`,
+    });
+  }
+
+  if (wifi.state !== "unknown" && environment.privateHardwareAddress !== null) {
+    findings.push({
+      id: "hardware-address",
+      severity: "INFO",
+      message: environment.privateHardwareAddress
+        ? "This device shows the network a private (randomised) Wi-Fi address instead of its hardware address."
+        : "This device shows the network its real hardware Wi-Fi address. A private Wi-Fi address stops networks, and a router managed by your ISP, from recognising the device.",
+    });
+  }
   return findings;
 }
 
@@ -201,6 +273,7 @@ export function buildFindings(checks: Checks): Finding[] {
     ...upnpFindings(checks.upnp),
     ...wifiFindings(checks.wifi),
     ...environmentFindings(checks.environment, checks),
+    ...deviceFindings(checks),
     {
       id: "wan",
       severity: "INFO",

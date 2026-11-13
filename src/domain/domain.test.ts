@@ -1,7 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import {
   classifySecurity,
+  effectiveDns,
   environmentCheckFrom,
+  isHardwareDerivedIPv6,
+  NO_DEVICE,
   NO_WIFI,
   parseDns,
   securityLabel,
@@ -11,7 +14,7 @@ import {
 } from "./evidence.ts";
 import { buildFindings, topFixes } from "./findings.ts";
 import { isPrivateIPv4, redactIPv4, requireHomeGateway, SafetyStop } from "./gateway.ts";
-import type { Checks, WifiCheck } from "./model.ts";
+import type { Checks, EnvironmentCheck, WifiCheck } from "./model.ts";
 import { buildReport, describeChanges, fingerprint } from "./report.ts";
 import { AUDITED_PORTS, scoreChecks } from "./scoring.ts";
 
@@ -28,13 +31,26 @@ const wifi = (over: Partial<WifiCheck> = {}): WifiCheck => ({
   ...over,
 });
 
+const environment = (over: Partial<EnvironmentCheck> = {}): EnvironmentCheck => ({
+  resolver: "unknown",
+  resolverProvider: null,
+  globalIpv6: null,
+  tunnelActive: null,
+  firewall: "unknown",
+  stealthMode: null,
+  openListenerCount: null,
+  privateHardwareAddress: null,
+  ipv6FromHardwareAddress: null,
+  ...over,
+});
+
 /** Only HTTP (80) answers; everything else is unknown. Scored port weight: 49 of 53. */
 const checks = (over: Partial<Checks> = {}): Checks => ({
   ports: AUDITED_PORTS.map(({ port, service }) => ({ port, service, reachable: port === 80 })),
   upnp: { state: "unknown", mappingCount: null, sensitiveCount: null, mappings: [] },
   wifi: wifiCheckFrom(NO_WIFI),
   dns: { status: "unknown" },
-  environment: { resolver: "unknown", resolverProvider: null, globalIpv6: null },
+  environment: environment(),
   ...over,
 });
 const allClosed = () => checks().ports.map((p) => ({ ...p, reachable: false }));
@@ -120,13 +136,13 @@ describe("evidence", () => {
 
   test("resolver is classified without keeping its address", () => {
     const classify = (resolver: string) =>
-      environmentCheckFrom({ resolvers: [resolver], globalIpv6: false }, "192.168.1.1");
+      environmentCheckFrom({ ...NO_DEVICE, resolvers: [resolver], globalIpv6: false }, "192.168.1.1");
     expect(classify("192.168.1.1").resolver).toBe("gateway");
     expect(classify("192.168.1.53").resolver).toBe("private");
     expect(classify("127.0.0.1").resolver).toBe("local");
     expect(classify("9.9.9.9")).toMatchObject({ resolver: "public", resolverProvider: "Quad9" });
     expect(classify("203.0.113.9")).toMatchObject({ resolver: "public", resolverProvider: null });
-    expect(environmentCheckFrom({ resolvers: [], globalIpv6: null }, "192.168.1.1").resolver).toBe("unknown");
+    expect(environmentCheckFrom({ ...NO_DEVICE, resolvers: [], globalIpv6: null }, "192.168.1.1").resolver).toBe("unknown");
     expect(JSON.stringify(classify("192.168.1.53"))).not.toContain("192.168");
   });
 });
@@ -205,5 +221,78 @@ describe("report", () => {
     expect(fingerprint(a)).toBe(fingerprint(b));
     const c = buildReport(checks({ dns: { status: "encrypted" } }), null, context);
     expect(describeChanges(a, c)).toEqual(["DNS: unknown -> encrypted", "Score: 92 -> 95", "Coverage: 43 -> 59"]);
+  });
+});
+
+describe("this device", () => {
+  const find = (c: Checks, id: string) => buildFindings(c).find((f) => f.id === id);
+  const dnsLine = (c: Checks) => scoreChecks(c).breakdown.find((line) => line.id === "dns");
+
+  test("a reported encrypted DNS is not trusted while a tunnel is connected", () => {
+    const tunnelled = checks({ dns: { status: "encrypted" }, environment: environment({ tunnelActive: true }) });
+    expect(effectiveDns(tunnelled)).toBe("unknown");
+    expect(dnsLine(tunnelled)?.earned).toBeNull();
+    expect(find(tunnelled, "dns")).toMatchObject({ severity: "LOW" });
+    expect(find(tunnelled, "dns")?.message).toStartWith("DNS: Unknown.");
+    expect(topFixes(buildFindings(tunnelled)).join(" ")).toContain("tunnel");
+
+    const direct = checks({ dns: { status: "encrypted" }, environment: environment({ tunnelActive: false }) });
+    expect(effectiveDns(direct)).toBe("encrypted");
+    expect(dnsLine(direct)?.earned).toBe(20);
+    expect(effectiveDns(checks({ dns: { status: "plaintext" }, environment: environment({ tunnelActive: true }) }))).toBe("plaintext");
+  });
+
+  test("a tunnel next to plaintext or unknown DNS is explained once, without an alarm", () => {
+    const c = checks({ environment: environment({ tunnelActive: true }) });
+    expect(find(c, "tunnel")).toMatchObject({ severity: "INFO" });
+    expect(find(checks(), "tunnel")).toBeUndefined();
+  });
+
+  test("a configured public resolver does not contradict encrypted DNS", () => {
+    const publicResolver = environment({ resolver: "public", resolverProvider: "OpenDNS", tunnelActive: false });
+    const encrypted = find(checks({ dns: { status: "encrypted" }, environment: publicResolver }), "resolver")?.message;
+    expect(encrypted).toContain("Encrypted DNS overrides that setting");
+    expect(encrypted).not.toContain("your ISP can still read them");
+    expect(find(checks({ environment: publicResolver }), "resolver")?.message).toContain("your ISP can still read them");
+  });
+
+  test("the firewall is rated by what it leaves reachable", () => {
+    const firewall = (over: Partial<EnvironmentCheck>) => find(checks({ environment: environment(over) }), "firewall");
+    expect(firewall({ firewall: "off", openListenerCount: 2 })).toMatchObject({ severity: "MEDIUM" });
+    expect(firewall({ firewall: "off", openListenerCount: 2 })?.message).toContain("At least 2 ports");
+    expect(firewall({ firewall: "off", openListenerCount: 0 })).toMatchObject({ severity: "LOW" });
+    expect(firewall({ firewall: "off" })).toMatchObject({ severity: "LOW" });
+    expect(firewall({ firewall: "on", stealthMode: false })).toMatchObject({ severity: "INFO" });
+    expect(firewall({ firewall: "on", stealthMode: false })?.message).toContain("Stealth mode is off");
+    expect(firewall({})?.message).toStartWith("Device firewall: Unknown.");
+  });
+
+  test("the hardware address is reported only on Wi-Fi, and never stored", () => {
+    const onWifi = checks({ wifi: wifi(), environment: environment({ privateHardwareAddress: false }) });
+    expect(find(onWifi, "hardware-address")?.message).toContain("real hardware Wi-Fi address");
+    expect(find(checks({ environment: environment({ privateHardwareAddress: false }) }), "hardware-address")).toBeUndefined();
+    const observed = environmentCheckFrom(
+      { ...NO_DEVICE, resolvers: [], globalIpv6: null, hardwareAddressRandomised: true, firewall: { enabled: true, stealth: null } },
+      "192.168.1.1",
+    );
+    expect(observed).toMatchObject({ privateHardwareAddress: true, firewall: "on", stealthMode: null });
+  });
+
+  test("an IPv6 address built from the hardware address is flagged", () => {
+    expect(isHardwareDerivedIPv6("2001:db8::a683:e7ff:fe22:3344")).toBe(true);
+    expect(isHardwareDerivedIPv6("2001:db8:1:2:a683:e7ff:fe22:3344%en0")).toBe(true);
+    expect(isHardwareDerivedIPv6("2001:db8::1c3a:9b2f:77de:41a0")).toBe(false);
+    expect(isHardwareDerivedIPv6("2001:db8::1")).toBe(false);
+    expect(isHardwareDerivedIPv6("not-an-address")).toBe(false);
+    const flagged = checks({ environment: environment({ globalIpv6: true, ipv6FromHardwareAddress: true }) });
+    expect(find(flagged, "ipv6-privacy")).toMatchObject({ severity: "LOW" });
+    expect(find(checks({ environment: environment({ globalIpv6: true, ipv6FromHardwareAddress: false }) }), "ipv6-privacy")).toBeUndefined();
+  });
+
+  test("watch mode notices device changes", () => {
+    const before = buildReport(checks({ environment: environment({ firewall: "off", tunnelActive: false }) }), null, context);
+    const after = buildReport(checks({ environment: environment({ firewall: "on", tunnelActive: true }) }), null, context);
+    expect(fingerprint(before)).not.toBe(fingerprint(after));
+    expect(describeChanges(before, after)).toEqual(["VPN or tunnel alongside: no -> yes", "Device firewall: off -> on"]);
   });
 });

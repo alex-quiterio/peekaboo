@@ -1,4 +1,5 @@
 // Scores only what is known, and reports coverage separately.
+import { effectiveDns } from "./evidence.ts";
 import type { Checks, Score, ScoreLine } from "./model.ts";
 
 /** Every port the audit may touch. Weight 0 = informational: checked and reported, never scored. */
@@ -29,7 +30,8 @@ export function scoreChecks(checks: Checks): Score {
     };
   });
 
-  const { upnp, wifi, dns } = checks;
+  const { upnp, wifi } = checks;
+  const dns = effectiveDns(checks);
   const n = wifi.sameChannelCount;
   breakdown.push(
     {
@@ -54,7 +56,7 @@ export function scoreChecks(checks: Checks): Score {
       id: "dns",
       label: "DNS",
       weight: WEIGHT.dns,
-      earned: dns.status === "unknown" ? null : dns.status === "encrypted" ? WEIGHT.dns : 0,
+      earned: dns === "unknown" ? null : dns === "encrypted" ? WEIGHT.dns : 0,
     },
   );
 

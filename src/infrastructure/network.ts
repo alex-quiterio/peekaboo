@@ -7,6 +7,7 @@ import { Client } from "@runonflux/nat-upnp";
 import { NO_WIFI, type EnvironmentObservation, type UpnpObservation, type WifiObservation } from "@domain/evidence.ts";
 import type { DefaultRoute } from "@domain/gateway.ts";
 import type { EnvironmentInspector, GatewayLocator, PortProbe, UpnpInspector, WifiInspector } from "@domain/ports.ts";
+import { readDevice } from "./device.ts";
 
 const TCP_TIMEOUT_MS = 800;
 const UPNP_TIMEOUT_MS = 3000;
@@ -121,6 +122,6 @@ export class SystemEnvironmentInspector implements EnvironmentInspector {
     } catch {
       // leave null: reported as Unknown
     }
-    return { resolvers, globalIpv6 };
+    return { resolvers, globalIpv6, ...(await readDevice()) };
   }
 }

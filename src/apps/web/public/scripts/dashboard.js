@@ -103,6 +103,57 @@ function mappingsCard(report) {
         h("td", {}, m.sensitive ? h("span", { class: "badge HIGH" }, "YES") : "")))))));
 }
 
+// The device list lives in this page's memory only. The server does not keep it and nothing saves it.
+const devices = { loading: false, list: null, error: null };
+
+function devicesCard() {
+  const button = h("button", { class: "ghost", type: "button", id: "devices-btn" },
+    devices.loading ? "Looking… (a few seconds)" : devices.list ? "List again" : "List devices");
+  button.disabled = devices.loading;
+  button.addEventListener("click", listDevices);
+
+  const tags = (d) => [
+    d.role === "router" ? h("span", { class: "badge LOW" }, "ROUTER") : null,
+    d.role === "this-device" ? h("span", { class: "badge INFO" }, "THIS DEVICE") : null,
+    d.randomisedAddress ? h("span", { class: "badge INFO" }, "PRIVATE ADDRESS") : null,
+  ];
+  let body = null;
+  if (devices.error) {
+    body = h("p", { class: "notice error" }, devices.error);
+  } else if (devices.list) {
+    const rows = devices.list.devices;
+    body = [
+      h("p", { class: "muted" }, `${rows.length} device${rows.length === 1 ? "" : "s"} seen at ${time(devices.list.listedAt)}. ` +
+        "Devices that are asleep or ignore the network may be missing."),
+      h("div", { class: "scroll" }, h("table", {},
+        h("thead", {}, h("tr", {}, ["Device", "Address", "Hardware address", ""].map((t) => h("th", {}, t)))),
+        h("tbody", {}, rows.map((d) => h("tr", {},
+          h("td", {}, d.name || h("span", { class: "muted" }, "No name given")),
+          h("td", { class: "mono" }, d.address), h("td", { class: "mono" }, d.hardwareAddress),
+          h("td", { class: "tags" }, tags(d))))))),
+    ];
+  }
+  return h("section", { class: "card" },
+    h("div", { class: "card-head" }, h("h2", {}, "Devices on this network"), button),
+    h("p", { class: "muted lead" },
+      "Sends one empty packet to each address on your own network so every device shows up, then reads this " +
+      "computer's list of neighbours and asks the router for names. No device is probed. The list stays on this " +
+      "page: it is not saved and is gone when you reload."),
+    body);
+}
+
+async function listDevices() {
+  Object.assign(devices, { loading: true, error: null });
+  refresh();
+  try {
+    devices.list = await call("/api/devices", {});
+  } catch (err) {
+    Object.assign(devices, { list: null, error: err.message });
+  }
+  devices.loading = false;
+  refresh();
+}
+
 function watchCard(watch) {
   if (!watch.enabled && !watch.events.length) return null;
   const status = watch.enabled
@@ -134,12 +185,14 @@ function render(state) {
   if (!report) {
     content.append(h("div", { class: "card empty" },
       h("p", {}, "No audit has run yet."),
-      h("p", { class: "muted" }, "Run one while connected to a home network you own or administer.")));
+      h("p", { class: "muted" }, "Run one while connected to a home network you own or administer.")),
+      devicesCard());
     return;
   }
   content.append(
     h("div", { class: "grid" }, scoreCard(report), fixesCard(report)),
     findingsCard(report),
+    devicesCard(),
     ...[mappingsCard(report), watchCard(watch)].filter(Boolean),
     h("section", { class: "card" }, h("h2", {}, "Privacy"),
       h("ul", { class: "privacy" }, report.privacy.map((line) => h("li", {}, line)))));

@@ -23,7 +23,12 @@ bun run cli:watch --dns unknown   # re-audit every 30 minutes, print only change
 | UPnP | Reads the router's port mappings. Flags forwards to remote-access ports. Never changes anything. |
 | Wi-Fi | Security mode, band, and how crowded your channel is. |
 | DNS | Encryption status as you report it, plus which resolver this device uses. |
-| IPv6 | Whether this device has a global IPv6 address. |
+| IPv6 | Whether this device has a global IPv6 address, and whether that address is built from its hardware address. |
+| VPN or tunnel | Whether a tunnel is connected alongside your normal connection. If so, a reported "encrypted" DNS is treated as Unknown, because a tunnel can send lookups around encrypted DNS. |
+| Device firewall | Whether this device's firewall and stealth mode are on (macOS), and how many of its ports accept connections from the network. The count is a lower bound. |
+| Wi-Fi address | Whether this device shows the network a private (randomised) address or its real hardware address. |
+
+The device checks read this device's own settings. They send nothing, and keep only yes/no answers and counts.
 
 The score counts only checks that produced evidence. Coverage is reported next to it, so a high score on thin evidence is visible as such.
 

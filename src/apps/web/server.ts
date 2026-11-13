@@ -17,7 +17,7 @@ for await (const file of new Bun.Glob("**/*.{html,css,js}").scan(PUBLIC_DIR)) {
 }
 assets.set("/", path.join(PUBLIC_DIR, "index.html"));
 
-const { runAudit, reports } = createAudit();
+const { runAudit, listDevices, reports } = createAudit();
 
 const watch = {
   session: null as WatchSession | null,
@@ -123,6 +123,15 @@ const server = Bun.serve({
         const input = await body(req);
         setWatch(input.enabled === true, parseDns(input.dns));
         return Response.json(await state());
+      }
+      // The device list goes to the page that asked and nowhere else: not into state, a file or the log.
+      if (route === "POST /api/devices") {
+        try {
+          return Response.json(await listDevices.execute(), { headers: { "cache-control": "no-store" } });
+        } catch (error) {
+          if (error instanceof SafetyStop) throw error;
+          return Response.json({ error: "The device list could not be read. Nothing was changed." }, { status: 500 });
+        }
       }
       return new Response("Not found", { status: 404 });
     } catch (error) {

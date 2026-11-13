@@ -1,0 +1,13 @@
+/* The device list card: a heading with its action, and the tags column. */
+.card-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  align-items: center;
+  justify-content: space-between;
+}
+.card-head h2 { margin: 0; }
+.card-head + .lead { margin-top: 10px; }
+
+td.tags { white-space: nowrap; text-align: right; }
+td.tags .badge + .badge { margin-left: 6px; }

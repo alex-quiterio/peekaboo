@@ -1,4 +1,5 @@
 // The report aggregate: assembled from checks, compared with its predecessor, fingerprinted for change detection.
+import { effectiveDns } from "./evidence.ts";
 import { buildFindings, topFixes } from "./findings.ts";
 import { TARGET_PLACEHOLDER } from "./gateway.ts";
 import type { Checks, Comparison, Report, Score } from "./model.ts";
@@ -30,6 +31,7 @@ export function buildReport(
       "Only the private default gateway detected by the operating system was checked, plus this device's own network settings.",
       "No SSIDs, BSSIDs, MAC addresses, device names, UPnP descriptions or complete IP addresses are stored.",
       "Port checks connect and close without sending data. UPnP is read-only.",
+      "Device checks read this device's own settings. They send nothing and store only yes/no answers and counts.",
       "WAN exposure was not tested.",
     ],
     ...(comparison ? { comparison } : {}),
@@ -51,9 +53,16 @@ function comparable(report: Report): Record<string, string | number | null> {
   flat["Wi-Fi security"] = checks.wifi.securityMode ?? checks.wifi.security;
   flat["Wi-Fi band"] = checks.wifi.band;
   flat["Same-channel access points"] = checks.wifi.sameChannelCount;
-  flat["DNS"] = checks.dns.status;
+  flat["DNS"] = effectiveDns(checks);
   flat["DNS resolver"] = checks.environment.resolverProvider ?? checks.environment.resolver;
   flat["Global IPv6"] = checks.environment.globalIpv6 === null ? null : checks.environment.globalIpv6 ? "yes" : "no";
+  const yesNo = (value: boolean | null) => (value === null ? null : value ? "yes" : "no");
+  flat["VPN or tunnel alongside"] = yesNo(checks.environment.tunnelActive);
+  flat["Device firewall"] = checks.environment.firewall;
+  flat["Stealth mode"] = yesNo(checks.environment.stealthMode);
+  flat["Ports open on this device"] = checks.environment.openListenerCount;
+  flat["Private Wi-Fi address"] = yesNo(checks.environment.privateHardwareAddress);
+  flat["IPv6 built from hardware address"] = yesNo(checks.environment.ipv6FromHardwareAddress);
   flat["Score"] = score.provisional;
   flat["Coverage"] = score.coveragePercent;
   return flat;

@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { NO_DEVICE } from "@domain/evidence.ts";
 import { SafetyStop } from "@domain/gateway.ts";
 import type { Report } from "@domain/model.ts";
 import type { ReportRepository } from "@domain/ports.ts";
@@ -42,7 +43,7 @@ function harness(over: Partial<AuditDependencies> = {}) {
         nearbyCount: 9,
       }),
     },
-    environment: { inspect: async () => ({ resolvers: ["192.168.1.1"], globalIpv6: false }) },
+    environment: { inspect: async () => ({ ...NO_DEVICE, resolvers: ["192.168.1.1"], globalIpv6: false }) },
     reports,
     platform: "test",
     ...over,

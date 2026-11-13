@@ -8,6 +8,7 @@ A read-only, privacy-conscious audit of a home network the user owns or administ
 - Stop without scanning when the default route is a VPN or tunnel, or the gateway is not private IPv4.
 - Never add a target, host, CIDR, public-IP, banner-grabbing, credential, brute-force, exploit, or remote-login option.
 - TCP checks may only connect and immediately close, without sending application data. The only ports are those in `AUDITED_PORTS`.
+- Device checks read this device's own settings and socket table with fixed, read-only commands. They never connect to this device's ports, and they hand over only booleans and counts: no process names, addresses or hardware addresses.
 - UPnP code may call only `getGateway()` and `getMappings()`. It must never create or delete mappings, call external-IP or connection-control methods, or change router configuration.
 - Never print or save SSIDs, BSSIDs, MAC addresses, device names, raw UPnP descriptions, resolver addresses, or complete private IPs.
 - Save only `sanitized-report.json` and `previous-sanitized-report.json`.
@@ -21,7 +22,7 @@ Dependencies point inward only: `apps -> infrastructure -> application -> domain
 
 - `src/domain` holds the model and every rule (gateway safety, evidence sanitizing, scoring, findings, report). No I/O. `ports.ts` declares the interfaces the outside world must implement.
 - `src/application` holds the use cases: `RunAudit` and `WatchSession`. Depends on domain interfaces only.
-- `src/infrastructure` holds the adapters (network, OS, JSON files) and `composition.ts`, the one place they are wired together.
+- `src/infrastructure` holds the adapters (network, this device, JSON files) and `composition.ts`, the one place they are wired together.
 - `src/apps/cli` and `src/apps/web` are the two entry points. They do not import each other.
 
 Import across folders with the aliases `@domain/*`, `@application/*`, `@infrastructure/*`, `@apps/*`. Relative imports are for the same folder only.

@@ -46,6 +46,16 @@ export interface EnvironmentCheck {
   /** A well-known provider name, when the resolver is a recognised public one. */
   resolverProvider: string | null;
   globalIpv6: boolean | null;
+  /** A VPN or tunnel is connected while the default route still goes through the home router. */
+  tunnelActive: boolean | null;
+  firewall: "on" | "off" | "unknown";
+  stealthMode: boolean | null;
+  /** Ports on this device that accept connections from the network. A lower bound: system services can be hidden. */
+  openListenerCount: number | null;
+  /** The network sees a randomised hardware address instead of the real one. */
+  privateHardwareAddress: boolean | null;
+  /** A global IPv6 address is built from the hardware address, which makes the device recognisable everywhere. */
+  ipv6FromHardwareAddress: boolean | null;
 }
 
 export interface Checks {
