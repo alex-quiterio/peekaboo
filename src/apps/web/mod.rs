@@ -271,7 +271,7 @@ pub fn serve(args: &[String]) -> i32 {
         running: Mutex::new(false),
         finished: Condvar::new(),
         last_error: Mutex::new(None),
-        watch: Mutex::new(WatchState { session: None, dns: DnsStatus::Unknown, isp_latency: false, next_run_at: None, events: vec![], generation: 0 }),
+        watch: Mutex::new(WatchState { session: None, dns: DnsStatus::Unknown, isp_latency: true, next_run_at: None, events: vec![], generation: 0 }),
     });
     println!("Peekaboo: Home Network Privacy Check");
     println!("Dashboard: http://127.0.0.1:{port}  (Control-C to stop)");

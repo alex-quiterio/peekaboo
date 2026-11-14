@@ -8,9 +8,9 @@ Peekaboo: a read-only peek at what your home router and ISP can see.
 Run it only on a network you own or administer.
 
 USAGE
-  peekaboo scan [--dns encrypted|plaintext|unknown] [--isp-latency] [--save <name>]
+  peekaboo scan [--dns encrypted|plaintext|unknown] [--no-isp-latency] [--save <name>]
       One audit. About 20 seconds.
-  peekaboo watch [--dns ...] [--isp-latency]
+  peekaboo watch [--dns ...] [--no-isp-latency]
       Re-audit every 30 minutes and print only what changed.
   peekaboo reports [save <name> | compare <name> [<other>] | delete <name>]
       List, keep, compare or delete saved reports.

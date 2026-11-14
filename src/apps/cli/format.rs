@@ -13,15 +13,16 @@ pub struct ScanOptions {
     pub save: Option<String>,
 }
 
-/// The only flags are --dns, --isp-latency and (for scan) --save <name>. Anything else, including any kind of
+/// The only flags are --dns, --isp-latency / --no-isp-latency and (for scan) --save <name>. Anything else, including any kind of
 /// target, is rejected. A bad name is refused now, so it stops the run before anything is measured.
 pub fn options_from_args(args: &[String], allow_save: bool) -> Result<ScanOptions, SafetyStop> {
     let refuse = || SafetyStop::new(if allow_save {
-        "The only options are --dns encrypted|plaintext|unknown, --isp-latency and --save <name>."
+        "The only options are --dns encrypted|plaintext|unknown, --no-isp-latency and --save <name>."
     } else {
-        "The only options are --dns encrypted|plaintext|unknown and --isp-latency."
+        "The only options are --dns encrypted|plaintext|unknown and --no-isp-latency."
     });
-    let (mut dns, mut isp_latency, mut save) = (None, false, None);
+    // On unless the caller opts out: the delay check is the audit's one step past the router.
+    let (mut dns, mut isp_latency, mut save) = (None, true, None);
     let mut args = args.iter();
     while let Some(arg) = args.next() {
         let (flag, inline) = match arg.split_once('=') {
@@ -33,6 +34,7 @@ pub fn options_from_args(args: &[String], allow_save: bool) -> Result<ScanOption
             "--dns" => dns = Some(value()?),
             "--save" if allow_save => save = Some(value()?),
             "--isp-latency" if inline.is_none() => isp_latency = true,
+            "--no-isp-latency" if inline.is_none() => isp_latency = false,
             _ => return Err(refuse()),
         }
     }
@@ -232,7 +234,7 @@ fn details_section(style: &Style, report: &Report) -> Vec<String> {
             None => "Unknown".to_string(),
         }));
     } else {
-        lines.push(style.dim("  Not measured. Add --isp-latency to opt in."));
+        lines.push(style.dim("  Not measured (switched off). Remove --no-isp-latency to measure it."));
     }
     lines
 }
@@ -386,12 +388,13 @@ mod tests {
         let o = options_from_args(&args(&["--dns=plaintext", "--save=Home"]), true).unwrap();
         assert_eq!((o.dns, o.save.as_deref()), (DnsStatus::Plaintext, Some("Home")));
         let o = options_from_args(&[], true).unwrap();
-        assert_eq!((o.dns, o.isp_latency, o.save), (DnsStatus::Unknown, false, None));
+        assert_eq!((o.dns, o.isp_latency, o.save), (DnsStatus::Unknown, true, None));
+        assert!(!options_from_args(&args(&["--no-isp-latency"]), true).unwrap().isp_latency);
     }
 
     #[test]
     fn refuses_targets_unknown_flags_bad_values_and_bad_names() {
-        for bad in [&["--target", "1.2.3.4"][..], &["192.168.1.1"], &["--dns"], &["--dns", "8.8.8.8"], &["--isp-latency=yes"], &["--save", "../x"], &["--save"]] {
+        for bad in [&["--target", "1.2.3.4"][..], &["192.168.1.1"], &["--dns"], &["--dns", "8.8.8.8"], &["--isp-latency=yes"], &["--no-isp-latency=1"], &["--save", "../x"], &["--save"]] {
             assert!(options_from_args(&args(bad), true).is_err(), "{bad:?}");
         }
         assert!(options_from_args(&args(&["--save", "Home"]), false).is_err(), "watch cannot save");

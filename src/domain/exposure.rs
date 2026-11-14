@@ -44,7 +44,7 @@ fn nat_finding(latency: &LatencyCheck) -> Finding {
         return finding(
             "wan-nat",
             Severity::Info,
-            "Carrier-grade NAT: Unknown. Run the audit with the ISP delay option (--isp-latency, or the switch in the dashboard) to learn whether your ISP puts you behind carrier-grade NAT, which changes what the internet can reach.",
+            "Carrier-grade NAT: Unknown. Run the audit with the ISP delay check on (the default; see --no-isp-latency, or the switch in the dashboard) to learn whether your ISP puts you behind carrier-grade NAT, which changes what the internet can reach.",
             None,
         );
     }
