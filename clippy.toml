@@ -1,0 +1,28 @@
+# Only the adapters (`infrastructure`) and the entry points (`apps`) may do I/O. `src/lib.rs` denies these
+# lints for the whole crate and allows them on those two modules, so `domain` and `application` cannot touch
+# the disk, the network, processes, the environment or the clock. `tests/architecture.rs` checks the rest.
+disallowed-types = [
+    { path = "std::fs::File", reason = "disk access belongs in infrastructure" },
+    { path = "std::fs::OpenOptions", reason = "disk access belongs in infrastructure" },
+    { path = "std::net::TcpStream", reason = "network access belongs in infrastructure" },
+    { path = "std::net::TcpListener", reason = "network access belongs in infrastructure" },
+    { path = "std::net::UdpSocket", reason = "network access belongs in infrastructure" },
+    { path = "std::process::Command", reason = "running commands belongs in infrastructure" },
+]
+disallowed-methods = [
+    { path = "std::fs::read", reason = "disk access belongs in infrastructure" },
+    { path = "std::fs::read_to_string", reason = "disk access belongs in infrastructure" },
+    { path = "std::fs::read_dir", reason = "disk access belongs in infrastructure" },
+    { path = "std::fs::write", reason = "disk access belongs in infrastructure" },
+    { path = "std::fs::remove_file", reason = "disk access belongs in infrastructure" },
+    { path = "std::fs::create_dir_all", reason = "disk access belongs in infrastructure" },
+    { path = "std::fs::rename", reason = "disk access belongs in infrastructure" },
+    { path = "std::fs::copy", reason = "disk access belongs in infrastructure" },
+    { path = "std::fs::metadata", reason = "disk access belongs in infrastructure" },
+    { path = "std::env::var", reason = "the environment is read in infrastructure" },
+    { path = "std::env::var_os", reason = "the environment is read in infrastructure" },
+    { path = "std::env::args", reason = "arguments are read at the entry point" },
+    { path = "std::env::current_dir", reason = "the environment is read in infrastructure" },
+    { path = "std::time::SystemTime::now", reason = "the clock is read through infrastructure::clock" },
+    { path = "std::time::Instant::now", reason = "the clock is read through infrastructure::clock" },
+]

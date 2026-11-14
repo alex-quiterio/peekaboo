@@ -99,7 +99,7 @@ fn wifi_findings(wifi: &WifiCheck) -> Vec<Finding> {
             "channel",
             Info,
             "Channel congestion: Unknown. Your own access point could not be told apart from its neighbours. Operating systems hide Wi-Fi names from apps without Location permission.",
-            None,
+            Some("On macOS, allow Location Services for your terminal app (System Settings > Privacy & Security > Location Services), then run the audit again."),
         ),
         Some(0) => finding("channel", Info, format!("No other access points share your Wi-Fi channel{nearby}."), None),
         Some(n) => finding(

@@ -23,7 +23,7 @@ A read-only, privacy-conscious audit of a home network the user owns or administ
 
 ## Architecture
 
-Dependencies point inward only: `apps -> infrastructure -> application -> domain`. `tests/architecture.rs` enforces it, and several of the safety rules above.
+Dependencies point inward only: `apps -> infrastructure -> application -> domain`. `tests/architecture.rs` enforces it, and several of the safety rules above. `clippy.toml` plus the `deny` in `src/lib.rs` make `cargo clippy` fail on any disk, network, process, environment or clock use outside `infrastructure` and `apps`; CI runs it before the tests.
 
 - `src/domain` holds the model and every rule (gateway safety, evidence sanitizing, scoring, findings, speed advice, report, comparison, saved-report names, history points). No I/O. `ports.rs` declares the traits the outside world must implement.
 - `src/application` holds the use cases: `RunAudit`, `SavedReports`, `History`, `ListDevices` and `WatchSession`. Depends on domain traits only.
@@ -44,7 +44,7 @@ The report JSON keeps the camelCase shape the earlier TypeScript version wrote, 
 - `cargo run -- web [--port N]` serves the dashboard at http://127.0.0.1:4173.
 - `cargo run -- reports` lists saved reports; `reports save "Home"` keeps the latest audit; `reports compare "Office"` compares the latest audit with it, and `compare "Office" "Home"` compares two saved ones; `reports delete "Home"` removes one.
 - `cargo run -- history [clear]` shows or clears the trend of past audits.
-- `cargo test` runs everything. `cargo build --release` builds the binary.
+- `cargo clippy` checks that `domain` and `application` do no I/O. `cargo test` runs everything. `cargo build --release` builds the binary.
 
 ## Releasing
 

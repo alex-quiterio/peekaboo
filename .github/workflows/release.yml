@@ -40,6 +40,9 @@ jobs:
             exit 1
           fi
 
+      - name: Layering lints
+        run: cargo clippy --locked
+
       - name: Test
         run: cargo test --locked
 
