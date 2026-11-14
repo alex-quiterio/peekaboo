@@ -172,6 +172,10 @@ fn details_section(style: &Style, report: &Report) -> Vec<String> {
     lines.push(row(style, "State", upnp));
     lines.push(row(style, "Port mappings", unknown(checks.upnp.mapping_count, |n| n.to_string())));
     lines.push(row(style, "Remote-access", unknown(checks.upnp.sensitive_count, |n| n.to_string())));
+    for m in &checks.upnp.mappings {
+        let flag = if m.sensitive { style.red("  remote-access service") } else { String::new() };
+        lines.push(format!("    {} {} → port {}{flag}", m.protocol, m.external_port, m.internal_port));
+    }
 
     lines.push(String::new());
     lines.push(style.bold("Wi-Fi"));
@@ -191,6 +195,8 @@ fn details_section(style: &Style, report: &Report) -> Vec<String> {
     lines.push(row(style, "Channel width", unknown(speed.channel_width_mhz, |w| format!("{w} MHz"))));
     lines.push(row(style, "Nearby networks", unknown(wifi.nearby_count, |n| n.to_string())));
     lines.push(row(style, "Same channel", unknown(wifi.same_channel_count, |n| n.to_string())));
+    lines.push(row(style, "Overlapping", unknown(wifi.overlapping_count, |n| n.to_string())));
+    lines.push(row(style, "Noise floor", unknown(speed.noise_dbm, |n| format!("{n} dBm"))));
 
     lines.push(String::new());
     lines.push(style.bold("DNS"));
@@ -210,6 +216,7 @@ fn details_section(style: &Style, report: &Report) -> Vec<String> {
     lines.push(row(style, "Global IPv6", yes_no(env.global_ipv6)));
     lines.push(row(style, "VPN or tunnel", yes_no(env.tunnel_active)));
     lines.push(row(style, "Private hardware ID", yes_no(env.private_hardware_address)));
+    lines.push(row(style, "IPv6 from hardware", yes_no(env.ipv6_from_hardware_address)));
 
     let latency = &checks.latency;
     lines.push(String::new());
@@ -236,6 +243,7 @@ pub fn format_report(report: &Report, style: &Style) -> String {
         format!("{}  {}", style.bold("Peekaboo"), style.dim("home network privacy check")),
         row(style, "Target", &report.target),
         row(style, "Audited", when(&report.generated_at)),
+        row(style, "Platform", &report.platform),
         String::new(),
     ];
     for section in [summary_section(style, report), findings_section(style, report), breakdown_section(style, report), details_section(style, report)] {
@@ -250,6 +258,11 @@ pub fn format_report(report: &Report, style: &Style) -> String {
     if !report.speed_tips.is_empty() {
         lines.push(style.heading("Make the Wi-Fi faster"));
         lines.extend(numbered(style, &report.speed_tips));
+        lines.push(String::new());
+    }
+    if !report.privacy.is_empty() {
+        lines.push(style.heading("Privacy"));
+        lines.extend(report.privacy.iter().flat_map(|p| wrap(p, WIDTH - 4, 2)).map(|l| format!("  {l}")));
         lines.push(String::new());
     }
     lines.push(style.dim("Saved sanitized-report.json"));

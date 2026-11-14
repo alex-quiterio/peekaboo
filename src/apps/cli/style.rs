@@ -8,6 +8,7 @@ pub struct Style {
 }
 
 impl Style {
+    #[cfg(test)]
     pub fn plain() -> Self {
         Style { color: false }
     }
