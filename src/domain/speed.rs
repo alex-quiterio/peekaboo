@@ -169,6 +169,29 @@ pub fn latency_findings(check: &LatencyCheck) -> Vec<Finding> {
     findings
 }
 
+/// Settings that make a first connection fail now and then, so the device only joins on a retry.
+/// Worded as "can", because nothing here observed a failed join.
+fn join_findings(wifi: &WifiCheck) -> Vec<Finding> {
+    let mut findings = Vec::new();
+    if wifi.security_mode.as_deref() == Some("WPA2/WPA3") {
+        findings.push(finding(
+            "speed-join-transition",
+            Severity::Low,
+            "The router offers WPA2 and WPA3 together. Some devices fail the first WPA3 attempt and only join on a retry.",
+            Some("If a device often fails to join the first time, set the router to WPA2 only, or to WPA3 only if every device supports it."),
+        ));
+    }
+    if wifi.speed.dfs_channel == Some(true) {
+        findings.push(finding(
+            "speed-join-dfs",
+            Severity::Low,
+            "The 5 GHz channel in use is a radar-shared one (52 to 144). The router must leave it when it detects radar, and devices that join at that moment can fail once.",
+            Some("Set the 5 GHz channel to 36, 40, 44 or 48 in the router, which never has to move."),
+        ));
+    }
+    findings
+}
+
 pub fn speed_findings(wifi: &WifiCheck) -> Vec<Finding> {
     if wifi.state == WifiState::Unknown {
         return vec![finding("speed-link", Severity::Info, "Wi-Fi speed: Unknown. No Wi-Fi connection could be read.", None)];
@@ -176,6 +199,7 @@ pub fn speed_findings(wifi: &WifiCheck) -> Vec<Finding> {
     let mut findings = vec![link_finding(wifi)];
     findings.extend(signal_findings(&wifi.speed));
     findings.extend(setting_findings(wifi));
+    findings.extend(join_findings(wifi));
     findings
 }
 

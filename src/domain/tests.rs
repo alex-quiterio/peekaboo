@@ -27,6 +27,7 @@ fn wifi_check(change: impl FnOnce(&mut WifiCheck)) -> WifiCheck {
             signal: Some(SignalQuality::Excellent),
             channel_width_mhz: Some(80),
             standard: Some(WifiStandard::Wifi5),
+            dfs_channel: None,
         },
     };
     change(&mut wifi);
@@ -295,7 +296,7 @@ fn an_unread_link_is_unknown_never_called_slow() {
 fn a_weak_signal_says_to_fix_the_signal_not_to_change_band() {
     let wifi = wifi_check(|w| {
         w.band = Some(WifiBand::Ghz2);
-        w.speed = WifiSpeedCheck { link_rate_mbps: Some(40), signal_dbm: Some(-78), signal: Some(SignalQuality::Weak), channel_width_mhz: Some(20), standard: Some(WifiStandard::Wifi5), noise_dbm: Some(-92) };
+        w.speed = WifiSpeedCheck { link_rate_mbps: Some(40), signal_dbm: Some(-78), signal: Some(SignalQuality::Weak), channel_width_mhz: Some(20), standard: Some(WifiStandard::Wifi5), noise_dbm: Some(-92), ..Default::default() };
     });
     assert_eq!(speed_ids(&wifi), ["speed-link", "speed-signal"]);
     assert!(speed_findings(&wifi)[0].message.contains("which is slow"));
@@ -321,6 +322,26 @@ fn a_narrow_5_ghz_channel_and_loud_noise_are_flagged() {
     });
     assert_eq!(speed_ids(&wifi), ["speed-link", "speed-signal", "speed-noise", "speed-width"]);
     assert_eq!(speed_findings(&wifi).last().unwrap().action.as_deref(), Some("Set the 5 GHz channel width to 80 MHz in the router."));
+}
+
+#[test]
+fn settings_that_cause_failed_first_joins_are_flagged_but_never_scored() {
+    let wifi = wifi_check(|w| {
+        w.security_mode = Some("WPA2/WPA3".into());
+        w.speed.dfs_channel = Some(true);
+    });
+    assert_eq!(speed_ids(&wifi), ["speed-link", "speed-signal", "speed-join-transition", "speed-join-dfs"]);
+    let findings = speed_findings(&wifi);
+    assert!(top_fixes(&findings).is_empty());
+    assert_eq!(speed_tips(&findings).len(), 2);
+    // Unknown channel or plain WPA2 raises nothing.
+    assert_eq!(speed_ids(&wifi_check(|w| w.speed.dfs_channel = Some(false))), ["speed-link", "speed-signal"]);
+}
+
+#[test]
+fn only_5_ghz_channels_52_to_144_are_radar_shared() {
+    let dfs = |channel, mhz| wifi_check_from(&WifiObservation { connected: true, channel, frequency_mhz: mhz, ..Default::default() }).speed.dfs_channel;
+    assert_eq!([dfs(Some(36), None), dfs(Some(100), None), dfs(Some(149), None), dfs(Some(6), None), dfs(Some(100), Some(6500)), dfs(None, None)], [Some(false), Some(true), Some(false), None, None, None]);
 }
 
 #[test]

@@ -189,6 +189,8 @@ pub struct WifiSpeedCheck {
     pub signal: Option<SignalQuality>,
     pub channel_width_mhz: Option<u32>,
     pub standard: Option<WifiStandard>,
+    /// The 5 GHz channel is one that routers must vacate when they detect radar (channels 52 to 144).
+    pub dfs_channel: Option<bool>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
