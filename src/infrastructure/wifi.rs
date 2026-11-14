@@ -81,15 +81,16 @@ pub fn parse_mac_wifi(json: &str) -> WifiObservation {
         ..WifiObservation::default()
     };
 
-    // macOS hands out "<redacted>" for every network name without Location permission. A redacted name
-    // identifies nothing, so our own access point cannot be told apart from the neighbours.
+    // macOS lists the current network apart from "other local wireless networks", so the neighbour list
+    // already leaves our own access point out. Names are only a second check, and without Location
+    // permission every name is "<redacted>", so then the list is counted as it is.
+    let Some(channel) = channel else { return observation };
     let ssid = current["_name"].as_str().filter(|s| !s.is_empty() && !s.to_lowercase().contains("redacted"));
-    let (Some(ssid), Some(channel)) = (ssid, channel) else { return observation };
     let others: Vec<u32> = interface["spairport_airport_other_local_wireless_networks"]
         .as_array()
         .into_iter()
         .flatten()
-        .filter(|n| n["_name"].as_str() != Some(ssid))
+        .filter(|n| ssid.is_none() || n["_name"].as_str() != ssid)
         .filter_map(|n| channel_of(n["spairport_network_channel"].as_str().unwrap_or("")))
         .collect();
     if !others.is_empty() {
@@ -219,8 +220,16 @@ mod tests {
         assert_eq!((obs.channel, obs.channel_width_mhz, obs.link_rate_mbps), (Some(36), Some(80), Some(1200.0)));
         assert_eq!((obs.signal_dbm, obs.noise_dbm), (Some(-52.0), Some(-93.0)));
         assert_eq!((obs.security.as_str(), obs.standard.as_deref()), ("WPA2 WPA3", Some("802.11ax")));
-        // A redacted name cannot be told apart from the neighbours, so congestion stays unknown.
+        // No neighbours listed, so congestion stays unknown.
         assert_eq!((obs.same_channel_count, obs.nearby_count), (None, None));
+    }
+
+    #[test]
+    fn counts_the_neighbour_list_when_names_are_redacted() {
+        let others = r#"{"_name":"<redacted>","spairport_network_channel":"36 (5GHz, 80MHz)"},
+                        {"_name":"<redacted>","spairport_network_channel":"149 (5GHz, 80MHz)"}"#;
+        let obs = parse_mac_wifi(&mac_report("<redacted>", others));
+        assert_eq!((obs.same_channel_count, obs.nearby_count, obs.overlapping_count), (Some(1), Some(2), Some(0)));
     }
 
     #[test]
