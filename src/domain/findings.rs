@@ -244,11 +244,11 @@ pub fn build_findings(checks: &Checks) -> Vec<Finding> {
 }
 
 /// At most three unique, non-INFO actions, most severe first. Speed advice is listed separately, as speed tips,
-/// and Wi-Fi log findings describe a past event, so they are never a fix for the audit.
+/// and connection log findings describe a past event, so they are never a fix for the audit.
 pub fn top_fixes(findings: &[Finding]) -> Vec<String> {
     let mut candidates: Vec<&Finding> = findings
         .iter()
-        .filter(|f| f.severity != Severity::Info && f.action.is_some() && !f.id.starts_with("speed-") && !f.id.starts_with("wifi-log-"))
+        .filter(|f| f.severity != Severity::Info && f.action.is_some() && !f.id.starts_with("speed-") && !f.id.starts_with("dhcp-log-"))
         .collect();
     candidates.sort_by_key(|f| f.severity.rank());
     let mut actions: Vec<String> = Vec::new();

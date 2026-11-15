@@ -1,30 +1,32 @@
-//! Recent Wi-Fi join trouble, as counts read from this device's own Wi-Fi log. Advice only: none of this is scored.
-//! The log itself never gets here: the adapter hands over numbers, and nothing in this module can hold text from it.
+//! How long this device recently went without a network address, as numbers read from its own system log.
+//! Advice only: none of this is scored. The log itself never gets here: the adapter hands over numbers, and
+//! nothing in this module can hold text from it.
 use super::model::*;
 
 /// How far back the log is read. Matches the interval of `peekaboo watch`.
 pub const LOG_WINDOW_MINUTES: u32 = 30;
 
-/// A wait longer than a day is not a Wi-Fi retry timer; treat it as unreadable.
-const MAX_PLAUSIBLE_WAIT_SECS: u32 = 86_400;
+/// A wait shorter than this is the ordinary hiccup of waking from sleep; it is not worth a word.
+pub const SLOW_ADDRESS_SECS: u32 = 10;
 
 /// What the log adapter saw. Only meaningful when `read` is true.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct WifiEventObservation {
+pub struct DhcpLogObservation {
     /// True only when the log was read. A log that could not be read is Unknown, never "no trouble".
     pub read: bool,
-    /// Join attempts that were aborted because the Wi-Fi hardware was not ready yet.
-    pub driver_not_ready: u32,
-    /// The longest time the system then waited before it tried again.
-    pub longest_retry_wait_secs: Option<u32>,
+    /// DHCP requests that the router did not answer.
+    pub unanswered: u32,
+    /// The longest time between losing the network address and getting one again.
+    pub longest_without_address_secs: Option<u32>,
 }
 
-pub fn wifi_stability_from(observation: &WifiEventObservation) -> WifiStabilityCheck {
+pub fn wifi_stability_from(observation: &DhcpLogObservation) -> WifiStabilityCheck {
     if !observation.read {
         return WifiStabilityCheck::default();
     }
-    let wait = observation.longest_retry_wait_secs.filter(|s| *s > 0 && *s <= MAX_PLAUSIBLE_WAIT_SECS && observation.driver_not_ready > 0);
-    WifiStabilityCheck { window_minutes: LOG_WINDOW_MINUTES, driver_not_ready: Some(observation.driver_not_ready), longest_retry_wait_secs: wait }
+    // The window is the longest a gap could be, so anything longer is a misread, not a measurement.
+    let longest = observation.longest_without_address_secs.filter(|s| *s > 0 && *s <= LOG_WINDOW_MINUTES * 60);
+    WifiStabilityCheck { window_minutes: LOG_WINDOW_MINUTES, dhcp_unanswered: Some(observation.unanswered), longest_without_address_secs: longest }
 }
 
 fn plural(n: u32, one: &str, many: &str) -> String {
@@ -33,29 +35,24 @@ fn plural(n: u32, one: &str, many: &str) -> String {
 
 /// Nothing is said when the log could not be read, because most platforms cannot read it.
 pub fn stability_findings(check: &WifiStabilityCheck) -> Vec<Finding> {
-    let Some(count) = check.driver_not_ready else { return vec![] };
+    let Some(unanswered) = check.dhcp_unanswered else { return vec![] };
     let window = check.window_minutes;
-    if count == 0 {
+    let Some(secs) = check.longest_without_address_secs.filter(|s| *s >= SLOW_ADDRESS_SECS) else {
         return vec![Finding {
-            id: "wifi-log-clear".into(),
+            id: "dhcp-log-clear".into(),
             severity: Severity::Info,
-            message: format!("No Wi-Fi rejoin problems showed in this device's own Wi-Fi log over the last {window} minutes."),
+            message: format!("No long wait for a network address showed in this device's own log over the last {window} minutes."),
             action: None,
         }];
-    }
-    let wait = check.longest_retry_wait_secs.map(|s| {
-        let minutes = (s + 30) / 60;
-        format!(" The system then waited about {} before trying again.", plural(minutes.max(1), "minute", "minutes"))
-    });
+    };
     vec![Finding {
-        id: "wifi-log-driver".into(),
+        id: "dhcp-log-slow".into(),
         severity: Severity::Info,
         message: format!(
-            "In the last {window} minutes this device's Wi-Fi failed to join {} while its Wi-Fi hardware was not ready, most likely right after waking from sleep.{}",
-            plural(count, "time", "times"),
-            wait.unwrap_or_default()
+            "In the last {window} minutes this device went without a network address for up to about {secs} seconds, after {} got no answer from the router. That is most likely why Wi-Fi looked connected while nothing loaded. This device cannot tell whether the router was slow to answer or the request never reached it.",
+            plural(unanswered.max(1), "request", "requests")
         ),
-        action: Some("Turn Wi-Fi off and on to rejoin without waiting.".into()),
+        action: Some("Renew the DHCP lease (on macOS: System Settings, Wi-Fi, Details, TCP/IP), or turn Wi-Fi off and on.".into()),
     }]
 }
 
@@ -63,41 +60,41 @@ pub fn stability_findings(check: &WifiStabilityCheck) -> Vec<Finding> {
 mod tests {
     use super::*;
 
-    fn seen(count: u32, wait: Option<u32>) -> WifiEventObservation {
-        WifiEventObservation { read: true, driver_not_ready: count, longest_retry_wait_secs: wait }
+    fn seen(unanswered: u32, longest: Option<u32>) -> DhcpLogObservation {
+        DhcpLogObservation { read: true, unanswered, longest_without_address_secs: longest }
     }
 
     #[test]
     fn an_unread_log_is_unknown_and_says_nothing() {
-        let check = wifi_stability_from(&WifiEventObservation::default());
+        let check = wifi_stability_from(&DhcpLogObservation::default());
         assert_eq!(check, WifiStabilityCheck::default());
         assert!(stability_findings(&check).is_empty());
     }
 
     #[test]
-    fn a_log_with_no_trouble_is_not_the_same_as_an_unreadable_one() {
-        let check = wifi_stability_from(&seen(0, Some(120)));
-        assert_eq!((check.driver_not_ready, check.longest_retry_wait_secs), (Some(0), None));
-        let findings = stability_findings(&check);
-        assert_eq!(findings.len(), 1);
-        assert_eq!(findings[0].id, "wifi-log-clear");
+    fn a_quiet_log_and_a_short_hiccup_are_both_clear_but_not_unknown() {
+        for observation in [seen(0, None), seen(2, Some(2))] {
+            let findings = stability_findings(&wifi_stability_from(&observation));
+            assert_eq!(findings.len(), 1);
+            assert_eq!(findings[0].id, "dhcp-log-clear");
+            assert!(findings[0].action.is_none());
+        }
     }
 
     #[test]
-    fn a_failed_join_is_worded_as_a_likely_cause_with_the_wait_and_one_action() {
-        let findings = stability_findings(&wifi_stability_from(&seen(1, Some(121))));
+    fn a_long_wait_is_worded_as_a_likely_cause_with_one_action() {
+        let findings = stability_findings(&wifi_stability_from(&seen(2, Some(35))));
         assert_eq!(findings.len(), 1);
         let f = &findings[0];
-        assert_eq!(f.id, "wifi-log-driver");
-        assert_eq!(f.severity, Severity::Info);
-        assert!(f.message.contains("most likely") && f.message.contains("1 time ") && f.message.contains("about 2 minutes"), "{}", f.message);
+        assert_eq!((f.id.as_str(), f.severity), ("dhcp-log-slow", Severity::Info));
+        assert!(f.message.contains("most likely") && f.message.contains("about 35 seconds") && f.message.contains("2 requests"), "{}", f.message);
         assert!(f.action.is_some());
     }
 
     #[test]
-    fn an_implausible_wait_is_dropped() {
-        assert_eq!(wifi_stability_from(&seen(2, Some(10_000_000))).longest_retry_wait_secs, None);
-        let message = &stability_findings(&wifi_stability_from(&seen(2, None)))[0].message;
-        assert!(message.contains("2 times") && !message.contains("waited"));
+    fn a_gap_longer_than_the_window_is_dropped_as_a_misread() {
+        let check = wifi_stability_from(&seen(1, Some(LOG_WINDOW_MINUTES * 60 + 1)));
+        assert_eq!(check.longest_without_address_secs, None);
+        assert_eq!(stability_findings(&check)[0].id, "dhcp-log-clear");
     }
 }

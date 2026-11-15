@@ -23,8 +23,8 @@ pub fn build_report(checks: Checks, previous: Option<&Report>, generated_at: Str
         "Device checks read this device's own settings. They send nothing and store only yes/no answers and counts.".to_string(),
         "Wi-Fi speed is the link rate this device's own radio reports. No speed test was run and nothing was sent to measure it.".to_string(),
     ];
-    if checks.wifi.stability.driver_not_ready.is_some() {
-        privacy.push("Recent Wi-Fi join trouble was counted from this device's own Wi-Fi log. Only counts and seconds were kept, never any log text, network name or address.".to_string());
+    if checks.wifi.stability.dhcp_unanswered.is_some() {
+        privacy.push("Recent waits for a network address were counted from this device's own system log. Only counts and seconds were kept, never any log text, address or network name.".to_string());
     }
     if checks.latency.requested {
         privacy.push("Delay to your ISP was timed, at your request, with a few empty packets that expire at the first router past your own. No address or location was looked up or stored.".to_string());

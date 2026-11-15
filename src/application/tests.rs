@@ -11,7 +11,7 @@ use crate::domain::model::Report;
 use crate::domain::ports::*;
 use crate::domain::saved::{label_key, SavedReport, MAX_SAVED_REPORTS};
 use crate::domain::scoring::AUDITED_PORTS;
-use crate::domain::stability::WifiEventObservation;
+use crate::domain::stability::DhcpLogObservation;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
@@ -92,10 +92,10 @@ impl WifiInspector for Wifi {
     }
 }
 
-struct WifiLog;
-impl WifiLogInspector for WifiLog {
-    fn inspect(&self) -> WifiEventObservation {
-        WifiEventObservation { read: true, driver_not_ready: 1, longest_retry_wait_secs: Some(120) }
+struct DhcpLog;
+impl DhcpLogInspector for DhcpLog {
+    fn inspect(&self) -> DhcpLogObservation {
+        DhcpLogObservation { read: true, unanswered: 2, longest_without_address_secs: Some(35) }
     }
 }
 
@@ -171,7 +171,7 @@ fn harness_full(route: DefaultRoute, latency: fn(u32) -> Option<HopObservation>,
         ports: Box::new(Ports(probed.clone())),
         upnp: Box::new(Upnp),
         wifi: Box::new(Wifi),
-        wifi_log: Box::new(WifiLog),
+        dhcp_log: Box::new(DhcpLog),
         environment: Box::new(Environment),
         latency: Box::new(Latency(traced.clone(), latency)),
         reports: reports.clone(),
@@ -191,11 +191,11 @@ fn harness() -> Harness {
 }
 
 #[test]
-fn recent_wifi_join_trouble_is_reported_as_counts_and_advice_never_as_a_fix() {
+fn a_long_wait_for_an_address_is_reported_as_numbers_and_advice_never_as_a_fix() {
     let report = harness().audit.execute(Some("unknown"), OFF).unwrap();
     let stability = &report.checks.wifi.stability;
-    assert_eq!((stability.driver_not_ready, stability.longest_retry_wait_secs), (Some(1), Some(120)));
-    let finding = report.findings.iter().find(|f| f.id == "wifi-log-driver").expect("the join trouble is reported");
+    assert_eq!((stability.dhcp_unanswered, stability.longest_without_address_secs), (Some(2), Some(35)));
+    let finding = report.findings.iter().find(|f| f.id == "dhcp-log-slow").expect("the long wait is reported");
     assert!(finding.message.contains("most likely"));
     assert!(!report.top_fixes.contains(finding.action.as_ref().unwrap()));
 }

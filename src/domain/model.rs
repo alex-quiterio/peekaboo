@@ -201,16 +201,17 @@ pub enum WifiState {
     Unknown,
 }
 
-/// Recent Wi-Fi join trouble, read from this device's own Wi-Fi log. Numbers only; unknown when the log was not read.
+/// Recent waits for a network address, read from this device's own system log. Numbers only; unknown when the log
+/// was not read. Reports saved by 0.4.0 carried other fields here; they are ignored.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct WifiStabilityCheck {
     /// How many minutes of the log were read. Zero when it was not read.
     pub window_minutes: u32,
-    /// Join attempts aborted because the Wi-Fi hardware was not ready.
-    pub driver_not_ready: Option<u32>,
-    /// The longest wait before the system tried again, in seconds.
-    pub longest_retry_wait_secs: Option<u32>,
+    /// DHCP requests the router did not answer.
+    pub dhcp_unanswered: Option<u32>,
+    /// The longest time without a network address, in seconds.
+    pub longest_without_address_secs: Option<u32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

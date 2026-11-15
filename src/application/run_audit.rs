@@ -15,7 +15,7 @@ pub struct AuditDependencies {
     pub ports: Box<dyn PortProbe>,
     pub upnp: Box<dyn UpnpInspector>,
     pub wifi: Box<dyn WifiInspector>,
-    pub wifi_log: Box<dyn WifiLogInspector>,
+    pub dhcp_log: Box<dyn DhcpLogInspector>,
     pub environment: Box<dyn EnvironmentInspector>,
     pub latency: Box<dyn LatencyProbe>,
     pub reports: Arc<dyn ReportRepository>,
@@ -60,7 +60,7 @@ impl RunAudit {
         let dns = parse_dns(dns_input)?;
         let target = require_home_gateway(&deps.gateway.locate())?;
 
-        let (port_checks, upnp, wifi, wifi_events, environment) = thread::scope(|scope| {
+        let (port_checks, upnp, wifi, dhcp_events, environment) = thread::scope(|scope| {
             let ports = scope.spawn(|| {
                 thread::scope(|inner| {
                     let probes: Vec<_> = AUDITED_PORTS
@@ -75,13 +75,13 @@ impl RunAudit {
             });
             let upnp = scope.spawn(|| deps.upnp.inspect(&target));
             let wifi = scope.spawn(|| deps.wifi.inspect());
-            let wifi_log = scope.spawn(|| deps.wifi_log.inspect());
+            let dhcp_log = scope.spawn(|| deps.dhcp_log.inspect());
             let environment = scope.spawn(|| deps.environment.inspect());
             (
                 ports.join().expect("port checks panicked"),
                 upnp.join().expect("upnp check panicked"),
                 wifi.join().expect("wifi check panicked"),
-                wifi_log.join().expect("wifi log check panicked"),
+                dhcp_log.join().expect("dhcp log check panicked"),
                 environment.join().expect("environment check panicked"),
             )
         });
@@ -93,7 +93,7 @@ impl RunAudit {
             Checks {
                 ports: port_checks,
                 upnp: upnp_check_from(&upnp),
-                wifi: WifiCheck { stability: wifi_stability_from(&wifi_events), ..wifi_check_from(&wifi) },
+                wifi: WifiCheck { stability: wifi_stability_from(&dhcp_events), ..wifi_check_from(&wifi) },
                 dns: DnsCheck { status: dns },
                 environment: environment_check_from(&environment, &target),
                 latency: latency_check_from(options.isp_latency, &hops, &target),
