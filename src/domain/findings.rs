@@ -3,6 +3,7 @@ use super::evidence::effective_dns;
 use super::exposure::exposure_findings;
 use super::model::*;
 use super::speed::{latency_findings, speed_findings, USE_FASTER_BAND};
+use super::stability::stability_findings;
 
 fn finding(id: impl Into<String>, severity: Severity, message: impl Into<String>, action: Option<&str>) -> Finding {
     Finding { id: id.into(), severity, message: message.into(), action: action.map(str::to_string) }
@@ -233,6 +234,7 @@ pub fn build_findings(checks: &Checks) -> Vec<Finding> {
     findings.extend(upnp_findings(&checks.upnp));
     findings.extend(wifi_findings(&checks.wifi));
     findings.extend(speed_findings(&checks.wifi));
+    findings.extend(stability_findings(&checks.wifi.stability));
     findings.extend(latency_findings(&checks.latency));
     findings.extend(environment_findings(&checks.environment, checks));
     findings.extend(device_findings(checks));
@@ -241,10 +243,13 @@ pub fn build_findings(checks: &Checks) -> Vec<Finding> {
     findings
 }
 
-/// At most three unique, non-INFO actions, most severe first. Speed advice is listed separately, as speed tips.
+/// At most three unique, non-INFO actions, most severe first. Speed advice is listed separately, as speed tips,
+/// and Wi-Fi log findings describe a past event, so they are never a fix for the audit.
 pub fn top_fixes(findings: &[Finding]) -> Vec<String> {
-    let mut candidates: Vec<&Finding> =
-        findings.iter().filter(|f| f.severity != Severity::Info && f.action.is_some() && !f.id.starts_with("speed-")).collect();
+    let mut candidates: Vec<&Finding> = findings
+        .iter()
+        .filter(|f| f.severity != Severity::Info && f.action.is_some() && !f.id.starts_with("speed-") && !f.id.starts_with("wifi-log-"))
+        .collect();
     candidates.sort_by_key(|f| f.severity.rank());
     let mut actions: Vec<String> = Vec::new();
     for action in candidates.iter().filter_map(|f| f.action.as_ref()) {

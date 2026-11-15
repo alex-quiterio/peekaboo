@@ -201,6 +201,18 @@ pub enum WifiState {
     Unknown,
 }
 
+/// Recent Wi-Fi join trouble, read from this device's own Wi-Fi log. Numbers only; unknown when the log was not read.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct WifiStabilityCheck {
+    /// How many minutes of the log were read. Zero when it was not read.
+    pub window_minutes: u32,
+    /// Join attempts aborted because the Wi-Fi hardware was not ready.
+    pub driver_not_ready: Option<u32>,
+    /// The longest wait before the system tried again, in seconds.
+    pub longest_retry_wait_secs: Option<u32>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WifiCheck {
@@ -214,6 +226,8 @@ pub struct WifiCheck {
     pub nearby_count: Option<u32>,
     #[serde(default)]
     pub speed: WifiSpeedCheck,
+    #[serde(default)]
+    pub stability: WifiStabilityCheck,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

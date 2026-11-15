@@ -195,6 +195,7 @@ pub fn wifi_check_from(observation: &WifiObservation) -> WifiCheck {
             overlapping_count: None,
             nearby_count: None,
             speed: WifiSpeedCheck::default(),
+            stability: WifiStabilityCheck::default(),
         };
     }
     let security = classify_security(&observation.security);
@@ -208,6 +209,7 @@ pub fn wifi_check_from(observation: &WifiObservation) -> WifiCheck {
         overlapping_count: observation.overlapping_count,
         nearby_count: observation.nearby_count,
         speed: wifi_speed_from(observation),
+        stability: WifiStabilityCheck::default(),
     }
 }
 

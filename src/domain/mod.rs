@@ -12,6 +12,7 @@ pub mod report;
 pub mod saved;
 pub mod scoring;
 pub mod speed;
+pub mod stability;
 
 #[cfg(test)]
 mod tests;

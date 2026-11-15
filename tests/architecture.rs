@@ -123,3 +123,23 @@ fn no_option_names_a_scan_target() {
         }
     }
 }
+
+#[test]
+fn the_wifi_log_check_is_one_fixed_read_only_query_that_keeps_no_text() {
+    let (_, code) = sources().into_iter().find(|(p, _)| p == "infrastructure/wifi_log.rs").unwrap();
+    assert!(code.contains("const LOG_TOOL: &str = \"/usr/bin/log\""));
+    assert!(code.contains("const LOG_PREDICATE: &str"));
+    for forbidden in ["sudo", "--info", "--debug", "--private", "println!", "eprintln!", "dbg!", "fs::", "File::", "TcpStream", "UdpSocket"] {
+        assert!(!code.contains(forbidden), "wifi_log.rs mentions {forbidden}");
+    }
+    // Only one command is ever run.
+    assert_eq!(code.matches("run(").count(), 1);
+}
+
+#[test]
+fn the_wifi_stability_model_holds_numbers_only() {
+    let (_, code) = sources().into_iter().find(|(p, _)| p == "domain/model.rs").unwrap();
+    let start = code.find("pub struct WifiStabilityCheck").unwrap();
+    let body = &code[start..start + code[start..].find('}').unwrap()];
+    assert!(!body.contains("String") && !body.contains("Vec"), "{body}");
+}

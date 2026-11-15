@@ -10,6 +10,7 @@ use super::paths::data_dir;
 use super::route::SystemGatewayLocator;
 use super::upnp::NatUpnpInspector;
 use super::wifi::SystemWifiInspector;
+use super::wifi_log::SystemWifiLogInspector;
 use crate::application::history::History;
 use crate::application::list_devices::ListDevices;
 use crate::application::run_audit::{AuditDependencies, RunAudit};
@@ -39,6 +40,7 @@ pub fn create_app() -> App {
             ports: Box::new(TcpConnectProbe),
             upnp: Box::new(NatUpnpInspector),
             wifi: Box::new(SystemWifiInspector),
+            wifi_log: Box::new(SystemWifiLogInspector),
             environment: Box::new(SystemEnvironmentInspector),
             latency: Box::new(TracerouteLatencyProbe),
             reports: reports.clone(),

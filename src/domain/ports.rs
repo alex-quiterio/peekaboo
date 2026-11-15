@@ -6,6 +6,7 @@ use super::gateway::DefaultRoute;
 use super::history::HistoryPoint;
 use super::model::Report;
 use super::saved::SavedReport;
+use super::stability::WifiEventObservation;
 
 pub trait GatewayLocator: Send + Sync {
     /// The operating system's default route, unvalidated.
@@ -24,6 +25,12 @@ pub trait UpnpInspector: Send + Sync {
 
 pub trait WifiInspector: Send + Sync {
     fn inspect(&self) -> WifiObservation;
+}
+
+pub trait WifiLogInspector: Send + Sync {
+    /// One fixed, read-only query of this device's own Wi-Fi log over a short window, reduced to counts. Takes no
+    /// input, sends nothing over the network, and must not return, print or store any log text.
+    fn inspect(&self) -> WifiEventObservation;
 }
 
 pub trait EnvironmentInspector: Send + Sync {

@@ -11,6 +11,7 @@ use crate::domain::model::Report;
 use crate::domain::ports::*;
 use crate::domain::saved::{label_key, SavedReport, MAX_SAVED_REPORTS};
 use crate::domain::scoring::AUDITED_PORTS;
+use crate::domain::stability::WifiEventObservation;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
@@ -91,6 +92,13 @@ impl WifiInspector for Wifi {
     }
 }
 
+struct WifiLog;
+impl WifiLogInspector for WifiLog {
+    fn inspect(&self) -> WifiEventObservation {
+        WifiEventObservation { read: true, driver_not_ready: 1, longest_retry_wait_secs: Some(120) }
+    }
+}
+
 struct Environment;
 impl EnvironmentInspector for Environment {
     fn inspect(&self) -> EnvironmentObservation {
@@ -163,6 +171,7 @@ fn harness_full(route: DefaultRoute, latency: fn(u32) -> Option<HopObservation>,
         ports: Box::new(Ports(probed.clone())),
         upnp: Box::new(Upnp),
         wifi: Box::new(Wifi),
+        wifi_log: Box::new(WifiLog),
         environment: Box::new(Environment),
         latency: Box::new(Latency(traced.clone(), latency)),
         reports: reports.clone(),
@@ -179,6 +188,16 @@ fn home() -> DefaultRoute {
 
 fn harness() -> Harness {
     harness_with(home(), home_and_isp)
+}
+
+#[test]
+fn recent_wifi_join_trouble_is_reported_as_counts_and_advice_never_as_a_fix() {
+    let report = harness().audit.execute(Some("unknown"), OFF).unwrap();
+    let stability = &report.checks.wifi.stability;
+    assert_eq!((stability.driver_not_ready, stability.longest_retry_wait_secs), (Some(1), Some(120)));
+    let finding = report.findings.iter().find(|f| f.id == "wifi-log-driver").expect("the join trouble is reported");
+    assert!(finding.message.contains("most likely"));
+    assert!(!report.top_fixes.contains(finding.action.as_ref().unwrap()));
 }
 
 const OFF: AuditOptions = AuditOptions { isp_latency: false };

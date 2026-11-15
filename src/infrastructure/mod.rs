@@ -13,3 +13,4 @@ pub mod route;
 pub mod system;
 pub mod upnp;
 pub mod wifi;
+pub mod wifi_log;

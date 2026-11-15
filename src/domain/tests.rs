@@ -29,6 +29,7 @@ fn wifi_check(change: impl FnOnce(&mut WifiCheck)) -> WifiCheck {
             standard: Some(WifiStandard::Wifi5),
             dfs_channel: None,
         },
+        stability: WifiStabilityCheck::default(),
     };
     change(&mut wifi);
     wifi
