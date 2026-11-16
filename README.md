@@ -27,10 +27,12 @@ peekaboo watch --dns unknown          # re-audit every 30 minutes, print only ch
 peekaboo history                      # how score, Wi-Fi speed and delay have changed
 ```
 
-There are three options:
+There are five options:
 
 - `--dns encrypted|plaintext|unknown`. The audit cannot safely see whether your DNS is encrypted, so you tell it.
 - The audit also times the delay to the first router on your ISP's side. On by default; add `--no-isp-latency` to switch it off, because it is the one check that sends anything past your router. The dashboard has a switch for it.
+- `--output default|json`. The default is a short summary: score, connection, what needs attention. `json` prints the full sanitized report for scripts.
+- `--speed-test` (scan only, macOS) also saturates your connection for up to a minute and prints download, upload and delay under load. It is off unless you type it, because it sends real traffic to Apple's servers (it runs the system's own `networkQuality`). The dashboard has a switch for it, off by default and used on manual audits only, never on the 30-minute watch. The result is shown and its download and upload speeds are added to the trend, but it is never scored or saved in a report.
 - `--save <name>` (scan only) keeps the audit under a name. See below.
 
 An audit takes about 20 seconds. `peekaboo web --port 5000` changes the dashboard's port.
@@ -74,7 +76,7 @@ In a per-user folder: `~/Library/Application Support/peekaboo` on macOS, `$XDG_D
 | Router services (FTP, SSH, Telnet, DNS, HTTP/S, SMB, TR-069) | Connects to 11 ports on the default gateway and closes at once. Sends no data. |
 | UPnP | Reads the router's port mappings. Flags forwards to remote-access ports. Never changes anything. |
 | Wi-Fi | Security mode, band, and how crowded your channel is. |
-| Wi-Fi speed | The link rate, signal, Wi-Fi standard and channel width this device's radio reports, with tips to make the Wi-Fi faster. No speed test is run, so internet speed is not measured. Never scored. |
+| Wi-Fi speed | The link rate, signal, Wi-Fi standard and channel width this device's radio reports, with tips to make the Wi-Fi faster. Internet speed is measured only if you add `--speed-test` to `scan`. Never scored. |
 | Delay to your ISP (on by default) | Sends a few empty packets with a hop limit so small that they expire at the first router past your own, and times the answers. Reports milliseconds, and the most cable there can be to that router (an upper limit from the speed of light, not an estimate). No address, no location, no lookup service. Never scored. |
 | Internet side (inferred) | What can be said about exposure from outside, without testing from outside: whether your ISP puts you behind carrier-grade NAT or you are behind double NAT (needs `--isp-latency`), which ports UPnP forwards to the internet, and whether a device with a global IPv6 address is reachable. It never tests from outside and never looks up your public address; it tells you how to check for yourself. Never scored. |
 | DNS | Encryption status as you report it, plus which resolver this device uses. |

@@ -36,7 +36,7 @@ mod tests {
     use super::*;
 
     fn point(at: &str) -> HistoryPoint {
-        HistoryPoint { at: at.into(), score: Some(90), coverage_percent: 59, link_rate_mbps: Some(433), signal_dbm: Some(-40), router_ms: Some(6), isp_ms: None, band: None }
+        HistoryPoint { at: at.into(), score: Some(90), coverage_percent: 59, link_rate_mbps: Some(433), signal_dbm: Some(-40), router_ms: Some(6), isp_ms: None, band: None, download_mbps: None, upload_mbps: None }
     }
 
     #[test]

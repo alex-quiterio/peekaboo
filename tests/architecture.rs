@@ -143,3 +143,17 @@ fn the_wifi_stability_model_holds_numbers_only() {
     let body = &code[start..start + code[start..].find('}').unwrap()];
     assert!(!body.contains("String") && !body.contains("Vec"), "{body}");
 }
+
+#[test]
+fn the_speed_test_is_one_fixed_opt_in_command_that_keeps_only_numbers() {
+    let (_, code) = sources().into_iter().find(|(p, _)| p == "infrastructure/speed_test.rs").unwrap();
+    assert!(code.contains("const TOOL: &str = \"/usr/bin/networkQuality\""));
+    for forbidden in ["sudo", "println!", "eprintln!", "dbg!", "fs::", "File::", "TcpStream", "UdpSocket", "env::"] {
+        assert!(!code.contains(forbidden), "speed_test.rs mentions {forbidden}");
+    }
+    assert_eq!(code.matches("run(TOOL").count(), 1);
+    // Only the CLI's scan command and the dashboard's manual audit may ask for it, and the audit itself never does.
+    for (path, code) in sources().iter().filter(|(p, _)| !p.starts_with("apps/cli/") && p != "apps/web/mod.rs" && p != "infrastructure/composition.rs" && p != "application/mod.rs") {
+        assert!(!code.contains("run_speed_test") || path.starts_with("application/run_speed_test"), "{path} runs the speed test");
+    }
+}

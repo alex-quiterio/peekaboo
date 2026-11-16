@@ -7,6 +7,7 @@ use crate::application::watch_session::{WatchEvent, WatchSession, WATCH_INTERVAL
 use crate::domain::evidence::parse_dns;
 use crate::domain::gateway::SafetyStop;
 use crate::domain::model::DnsStatus;
+use crate::domain::speed_test::SpeedTestResult;
 use crate::infrastructure::clock::iso_from_unix_millis;
 use crate::infrastructure::composition::{create_app, App};
 use serde_json::{json, Value};
@@ -40,28 +41,36 @@ struct Shared {
     running: Mutex<bool>,
     finished: Condvar,
     last_error: Mutex<Option<String>>,
+    /// The opt-in speed test of the latest audit that asked for one, with that audit's time. Held in memory only:
+    /// never written to a file, never part of the report. `None` result means it was asked for but gave no reading.
+    speed_test: Mutex<Option<(String, Option<SpeedTestResult>)>>,
     watch: Mutex<WatchState>,
 }
 
 impl Shared {
     /// One audit at a time; concurrent callers share the run in flight.
-    fn scan(self: &Arc<Self>, dns: DnsStatus, isp_latency: bool) {
+    fn scan(self: &Arc<Self>, dns: DnsStatus, isp_latency: bool, speed_test: bool) {
         let mut running = lock(&self.running);
         if !*running {
             *running = true;
             let shared = Arc::clone(self);
-            thread::spawn(move || shared.run_scan(dns, isp_latency));
+            thread::spawn(move || shared.run_scan(dns, isp_latency, speed_test));
         }
         while *running {
             running = self.finished.wait(running).unwrap_or_else(PoisonError::into_inner);
         }
     }
 
-    fn run_scan(&self, dns: DnsStatus, isp_latency: bool) {
+    fn run_scan(&self, dns: DnsStatus, isp_latency: bool, speed_test: bool) {
         let outcome = catch_unwind(AssertUnwindSafe(|| self.app.run_audit.execute(Some(dns.as_str()), AuditOptions { isp_latency })));
         match outcome {
             Ok(Ok(report)) => {
                 *lock(&self.last_error) = None;
+                // After the audit, only when the page asked for it. Watch never does, so this is always a manual run.
+                *lock(&self.speed_test) = speed_test.then(|| {
+                    let result = catch_unwind(AssertUnwindSafe(|| self.app.run_speed_test.execute(&report.generated_at))).ok().and_then(Result::ok).flatten();
+                    (report.generated_at.clone(), result)
+                });
                 let mut watch = lock(&self.watch);
                 if let Some(event) = watch.session.as_mut().and_then(|s| s.observe(&report)) {
                     println!("[watch] {:?}: {}", event.kind, event.lines.join("; "));
@@ -101,7 +110,7 @@ impl Shared {
                 watch.next_run_at = Some(iso_from_unix_millis(next));
                 (watch.dns, watch.isp_latency)
             };
-            shared.scan(dns, isp_latency);
+            shared.scan(dns, isp_latency, false);
             for _ in 0..WATCH_INTERVAL_SECS {
                 thread::sleep(Duration::from_secs(1));
                 if lock(&shared.watch).generation != generation {
@@ -117,6 +126,7 @@ impl Shared {
             "report": self.app.reports.latest(),
             "scanning": *lock(&self.running),
             "error": *lock(&self.last_error),
+            "speedTest": lock(&self.speed_test).as_ref().map(|(at, result)| json!({ "generatedAt": at, "result": result })),
             "watch": {
                 "enabled": watch.session.is_some(),
                 "intervalMinutes": WATCH_INTERVAL_SECS / 60,
@@ -207,7 +217,7 @@ fn handle(shared: &Arc<Shared>, mut request: Request, port: u16) {
                 json!(shared.app.history.list())
             }
             "POST /api/scan" => {
-                shared.scan(dns_field(&input)?, input.get("ispLatency") == Some(&Value::Bool(true)));
+                shared.scan(dns_field(&input)?, input.get("ispLatency") == Some(&Value::Bool(true)), input.get("speedTest") == Some(&Value::Bool(true)));
                 shared.state()
             }
             "POST /api/watch" => {
@@ -271,6 +281,7 @@ pub fn serve(args: &[String]) -> i32 {
         running: Mutex::new(false),
         finished: Condvar::new(),
         last_error: Mutex::new(None),
+        speed_test: Mutex::new(None),
         watch: Mutex::new(WatchState { session: None, dns: DnsStatus::Unknown, isp_latency: true, next_run_at: None, events: vec![], generation: 0 }),
     });
     println!("Peekaboo: Home Network Privacy Check");

@@ -16,7 +16,7 @@ function h(tag, attrs, ...children) {
 const SEVERITY = ["HIGH", "MEDIUM", "LOW", "INFO"];
 const time = (iso) => new Date(iso).toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
 const selectedDns = () => document.querySelector('input[name="dns"]:checked').value;
-const selectedOptions = () => ({ dns: selectedDns(), ispLatency: $("isp-latency").checked });
+const selectedOptions = () => ({ dns: selectedDns(), ispLatency: $("isp-latency").checked, speedTest: $("speed-test").checked });
 
 function ring(score) {
   const r = 52, c = 2 * Math.PI * r;
@@ -73,7 +73,7 @@ function fixesCard(report) {
 }
 
 // Reports saved before the speed check existed have no speed fields; the card then asks for a new audit.
-function speedCard(report) {
+function speedCard(report, speedTest) {
   const speed = report.checks.wifi.speed;
   const tips = report.speedTips || [];
   if (!speed) {
@@ -88,7 +88,7 @@ function speedCard(report) {
     h("h2", {}, "Wi-Fi speed"),
     h("p", { class: "muted lead" },
       "The link between this device and the router, as this device's radio reports it. Real speed is about half " +
-      "the link rate. No speed test is run, so your internet plan's speed is not shown. " +
+      "the link rate. " + (speedTest ? "" : "Switch on the speed option above to measure your internet speed too. ") +
       (latency && latency.requested ? "" : "Switch on the delay option above to also time the first router on your ISP's side.")),
     h("div", { class: "stats" },
       stat("Link rate", speed.linkRateMbps, "Mbps"),
@@ -98,6 +98,13 @@ function speedCard(report) {
       stat("Channel width", speed.channelWidthMhz, "MHz"),
       latency && latency.requested ? [stat("Delay to router", latency.routerMs, "ms"), stat("Delay to ISP", latency.ispMs, "ms"),
         stat("ISP router within", latency.ispMaxKm ?? null, "km at most")] : null),
+    speedTest ? h("h3", {}, "Measured throughput") : null,
+    speedTest ? h("div", { class: "stats" },
+      speedTest.result
+        ? [stat("Download", speedTest.result.downloadMbps, "Mbps"), stat("Upload", speedTest.result.uploadMbps, "Mbps"),
+          stat("Idle latency", speedTest.result.idleLatencyMs, "ms"),
+          stat("Under load", speedTest.result.loadedLatencyMs, `ms · ${speedTest.result.responsivenessRpm ?? "?"} RPM`)]
+        : h("p", { class: "muted" }, "The speed test is not available here or could not be read.")) : null,
     h("h3", {}, "Make it faster"),
     tips.length
       ? h("ol", { class: "fixes" }, tips.map((tip) => h("li", {}, h("span", {}, tip))))
@@ -393,6 +400,8 @@ const TREND_MEASURES = [
   { name: "Wi-Fi signal", unit: "dBm", pick: (p) => p.signalDbm },
   { name: "Delay to router", unit: "ms", pick: (p) => p.routerMs },
   { name: "Delay to ISP", unit: "ms", pick: (p) => p.ispMs },
+  { name: "Download", unit: "Mbps", pick: (p) => p.downloadMbps },
+  { name: "Upload", unit: "Mbps", pick: (p) => p.uploadMbps },
 ];
 
 // A line through the known values; a gap in the data breaks the line instead of being bridged.
@@ -476,6 +485,8 @@ function setLoading(on) {
 
 function render(state) {
   const { report, watch, scanning, error } = state;
+  // Only the result that belongs to the report on screen, and only in this page's memory.
+  const speedTest = state.speedTest && report && state.speedTest.generatedAt === report.generatedAt ? state.speedTest : null;
   const content = $("content");
   content.replaceChildren();
 
@@ -486,7 +497,7 @@ function render(state) {
   }
   setLoading(scanning);
   $("scan-btn").disabled = scanning;
-  $("scan-btn").textContent = scanning ? "Auditing… (about 20 seconds)" : report ? "Run audit again" : "Run audit";
+  $("scan-btn").textContent = scanning ? ($("speed-test").checked ? "Auditing… (up to a minute and a half)" : "Auditing… (about 20 seconds)") : report ? "Run audit again" : "Run audit";
   $("watch-btn").textContent = watch.enabled ? "Stop watch" : "Start 30-minute watch";
   $("watch-btn").dataset.enabled = watch.enabled;
   $("last-run").textContent = report ? `Last audit ${time(report.generatedAt)}` : "";
@@ -502,7 +513,7 @@ function render(state) {
   }
   content.append(
     h("div", { class: "grid" }, scoreCard(report), fixesCard(report)),
-    speedCard(report),
+    speedCard(report, speedTest),
     trendCard(),
     internetCard(report),
     findingsCard(report),

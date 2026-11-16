@@ -188,6 +188,9 @@ pub struct WifiSpeedCheck {
     pub noise_dbm: Option<i32>,
     pub signal: Option<SignalQuality>,
     pub channel_width_mhz: Option<u32>,
+    /// The channel number this device's radio is on (a public radio setting, not a network name).
+    #[serde(default)]
+    pub channel: Option<u32>,
     pub standard: Option<WifiStandard>,
     /// The 5 GHz channel is one that routers must vacate when they detect radar (channels 52 to 144).
     pub dfs_channel: Option<bool>,

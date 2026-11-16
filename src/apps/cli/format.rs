@@ -4,25 +4,34 @@ use crate::domain::evidence::parse_dns;
 use crate::domain::gateway::SafetyStop;
 use crate::domain::history::{range, series, sparkline, HistoryPoint};
 use super::style::{wrap, Style, WIDTH};
-use crate::domain::model::{DnsStatus, Finding, Firewall, Report, ResolverKind, Severity, UpnpState, SEVERITY_ORDER};
+use crate::domain::model::{DnsStatus, Report, SignalQuality, Severity, SEVERITY_ORDER};
 use crate::domain::saved::{parse_label, SavedReportSummary};
+use crate::domain::speed_test::{Responsiveness, SpeedTestResult};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Output {
+    Default,
+    Json,
+}
 
 pub struct ScanOptions {
+    pub output: Output,
     pub dns: DnsStatus,
     pub isp_latency: bool,
+    pub speed_test: bool,
     pub save: Option<String>,
 }
 
-/// The only flags are --dns, --isp-latency / --no-isp-latency and (for scan) --save <name>. Anything else, including any kind of
+/// The only flags are --dns, --isp-latency / --no-isp-latency, --output default|json and (for scan) --speed-test and --save <name>. Anything else, including any kind of
 /// target, is rejected. A bad name is refused now, so it stops the run before anything is measured.
 pub fn options_from_args(args: &[String], allow_save: bool) -> Result<ScanOptions, SafetyStop> {
     let refuse = || SafetyStop::new(if allow_save {
-        "The only options are --dns encrypted|plaintext|unknown, --no-isp-latency and --save <name>."
+        "The only options are --dns encrypted|plaintext|unknown, --no-isp-latency, --output default|json, --speed-test and --save <name>."
     } else {
-        "The only options are --dns encrypted|plaintext|unknown and --no-isp-latency."
+        "The only options are --dns encrypted|plaintext|unknown, --no-isp-latency and --output default|json."
     });
     // On unless the caller opts out: the delay check is the audit's one step past the router.
-    let (mut dns, mut isp_latency, mut save) = (None, true, None);
+    let (mut dns, mut isp_latency, mut save, mut output, mut speed_test) = (None, true, None, Output::Default, false);
     let mut args = args.iter();
     while let Some(arg) = args.next() {
         let (flag, inline) = match arg.split_once('=') {
@@ -32,6 +41,12 @@ pub fn options_from_args(args: &[String], allow_save: bool) -> Result<ScanOption
         let mut value = || inline.clone().or_else(|| args.next().cloned()).ok_or_else(refuse);
         match flag {
             "--dns" => dns = Some(value()?),
+            "--output" => output = match value()?.as_str() {
+                "default" => Output::Default,
+                "json" => Output::Json,
+                _ => return Err(refuse()),
+            },
+            "--speed-test" if allow_save && inline.is_none() => speed_test = true,
             "--save" if allow_save => save = Some(value()?),
             "--isp-latency" if inline.is_none() => isp_latency = true,
             "--no-isp-latency" if inline.is_none() => isp_latency = false,
@@ -39,49 +54,18 @@ pub fn options_from_args(args: &[String], allow_save: bool) -> Result<ScanOption
         }
     }
     Ok(ScanOptions {
+        output,
         dns: parse_dns(dns.as_deref())?,
         isp_latency,
+        speed_test,
         save: save.map(|s| parse_label(Some(&s))).transpose()?,
     })
 }
 
-const LABEL_WIDTH: usize = 20;
+const LABEL_WIDTH: usize = 16;
 
 fn row(style: &Style, label: &str, value: impl AsRef<str>) -> String {
     format!("  {}{}", style.dim(&format!("{label:<LABEL_WIDTH$}")), value.as_ref())
-}
-
-fn unknown<T>(value: Option<T>, show: impl FnOnce(T) -> String) -> String {
-    value.map_or_else(|| "Unknown".to_string(), show)
-}
-
-fn yes_no(value: Option<bool>) -> String {
-    unknown(value, |v| if v { "yes" } else { "no" }.to_string())
-}
-
-fn numbered(style: &Style, items: &[String]) -> Vec<String> {
-    items
-        .iter()
-        .enumerate()
-        .flat_map(|(i, item)| {
-            let lead = format!("  {}  ", style.bold(&format!("{}.", i + 1)));
-            wrap(item, WIDTH - 5, 5).into_iter().enumerate().map(move |(n, l)| if n == 0 { format!("{lead}{l}") } else { format!("  {l}") })
-        })
-        .collect()
-}
-
-fn resolver(env: &crate::domain::model::EnvironmentCheck) -> String {
-    let kind = match env.resolver {
-        ResolverKind::Gateway => "your router",
-        ResolverKind::Private => "a device on your network",
-        ResolverKind::Local => "this device",
-        ResolverKind::Public => "a public provider",
-        ResolverKind::Unknown => "Unknown",
-    };
-    match &env.resolver_provider {
-        Some(provider) => format!("{kind} ({provider})"),
-        None => kind.to_string(),
-    }
 }
 
 fn summary_section(style: &Style, report: &Report) -> Vec<String> {
@@ -93,13 +77,66 @@ fn summary_section(style: &Style, report: &Report) -> Vec<String> {
             if let Some(c) = &report.comparison {
                 text.push_str(&format!("  was {} ({}{})", c.previous_score, if c.delta >= 0 { "+" } else { "" }, c.delta));
             }
-            lines.push(row(style, "Score (provisional)", text));
+            lines.push(row(style, "Score", text));
         }
     }
-    lines.push(row(style, "Evidence coverage", format!("{}% of the score could be measured", report.score.coverage_percent)));
+    lines.push(row(style, "Coverage", format!("{}% of the score could be measured", report.score.coverage_percent)));
     let count = |s: Severity| report.findings.iter().filter(|f| f.severity == s).count();
     let counts: Vec<String> = SEVERITY_ORDER.iter().map(|s| style.severity(*s, &format!("{} {}", count(*s), s.label().to_lowercase()))).collect();
     lines.push(row(style, "Findings", counts.join("  ")));
+    lines
+}
+
+/// What this device's own radio reports, as a few rows. Rows with no value are left out.
+fn connection_section(style: &Style, report: &Report, test: Option<&Option<SpeedTestResult>>) -> Vec<String> {
+    let wifi = &report.checks.wifi;
+    let speed = &wifi.speed;
+    let mut rows = Vec::new();
+    if let Some(standard) = speed.standard {
+        rows.push(row(style, "Standard", standard.as_str()));
+    }
+    let band = wifi.band.map(|b| b.as_str().replace(' ', ""));
+    let detail = match (speed.channel, band, speed.channel_width_mhz) {
+        (channel, band, width) if channel.is_some() || band.is_some() || width.is_some() => {
+            let inner: Vec<String> = [band, width.map(|w| format!("{w}MHz"))].into_iter().flatten().collect();
+            let inner = if inner.is_empty() { String::new() } else { format!(" ({})", inner.join(", ")) };
+            Some(format!("{}{inner}", channel.map_or_else(String::new, |c| c.to_string())).trim().to_string())
+        }
+        _ => None,
+    };
+    if let Some(detail) = detail {
+        rows.push(row(style, "Channel", detail));
+    }
+    if let Some(dbm) = speed.signal_dbm {
+        let quality = speed.signal.map_or(String::new(), |q| {
+            let word = match q {
+                SignalQuality::Excellent | SignalQuality::Good => style.green(q.as_str()),
+                SignalQuality::Fair => style.yellow(q.as_str()),
+                SignalQuality::Weak => style.red(q.as_str()),
+            };
+            format!(" ({word})")
+        });
+        rows.push(row(style, "Signal", format!("{dbm} dBm{quality}")));
+    }
+    if let (Some(signal), Some(noise)) = (speed.signal_dbm, speed.noise_dbm) {
+        rows.push(row(style, "SNR", format!("{} dB", signal - noise)));
+    }
+    if let Some(rate) = speed.link_rate_mbps {
+        rows.push(row(style, "Link rate", format!("{rate} Mbps {}", style.dim("(ceiling, not throughput)"))));
+    }
+    let latency = &report.checks.latency;
+    if let Some(ms) = latency.router_ms {
+        rows.push(row(style, "Router delay", format!("{ms} ms")));
+    }
+    if let Some(ms) = latency.isp_ms {
+        rows.push(row(style, "ISP delay", format!("{ms} ms")));
+    }
+    rows.extend(speed_rows(style, test));
+    if rows.is_empty() {
+        return Vec::new();
+    }
+    let mut lines = vec![style.heading("Current connection")];
+    lines.extend(rows);
     lines
 }
 
@@ -107,10 +144,9 @@ fn findings_section(style: &Style, report: &Report) -> Vec<String> {
     let mut lines = vec![style.heading("Findings")];
     let mut findings: Vec<_> = report.findings.iter().collect();
     findings.sort_by_key(|f| f.severity.rank());
-    // Routine port results are in the ports table; here they would only repeat it.
-    let routine = |f: &Finding| f.severity == Severity::Info && f.id.starts_with("port-");
-    let hidden = findings.iter().filter(|f| routine(f)).count();
-    findings.retain(|f| !routine(f));
+    // Informational notes stay out of the summary; the JSON output has them all.
+    let hidden = findings.iter().filter(|f| f.severity == Severity::Info).count();
+    findings.retain(|f| f.severity != Severity::Info);
     if findings.is_empty() {
         lines.push("  Nothing to report.".to_string());
     }
@@ -124,151 +160,64 @@ fn findings_section(style: &Style, report: &Report) -> Vec<String> {
         }
     }
     if hidden > 0 {
-        lines.push(style.dim(&format!("  + {hidden} routine router port results, listed under Network details")));
+        lines.push(style.dim(&format!("  + {hidden} informational notes (see --output json)")));
     }
     lines
 }
 
-fn breakdown_section(style: &Style, report: &Report) -> Vec<String> {
-    let mut lines = vec![style.heading("Score breakdown")];
-    let width = report.score.breakdown.iter().map(|l| l.label.chars().count()).max().unwrap_or(0);
-    for line in &report.score.breakdown {
-        let points = match line.earned {
-            Some(earned) => {
-                let text = format!("{earned:>2} / {}", line.weight);
-                if earned == line.weight { style.green(&text) } else if earned == 0 { style.red(&text) } else { style.yellow(&text) }
-            }
-            None => style.dim(&format!("{:>2} / {}  unknown, not counted", "?", line.weight)),
-        };
-        lines.push(format!("  {:<width$}  {points}", line.label));
-    }
-    lines
-}
-
-fn details_section(style: &Style, report: &Report) -> Vec<String> {
-    let checks = &report.checks;
-    let mut lines = vec![style.heading("Network details")];
-
-    lines.push(style.bold("Router ports (reachable from this network only)"));
-    if checks.ports.is_empty() {
-        lines.push("  Unknown".to_string());
-    }
-    for pair in checks.ports.chunks(2) {
-        let cells: Vec<String> = pair
-            .iter()
-            .map(|p| {
-                let state = if p.reachable { style.red("open  ") } else { style.green("closed") };
-                format!("{:>5} {:<12} {state}", p.port, p.service)
-            })
-            .collect();
-        lines.push(format!("  {}", cells.join("   ")));
-    }
-
-    lines.push(String::new());
-    lines.push(style.bold("UPnP"));
-    let upnp = match checks.upnp.state {
-        UpnpState::Detected => "detected",
-        UpnpState::Refused => "not offered (router refused)",
-        UpnpState::Unknown => "Unknown",
-    };
-    lines.push(row(style, "State", upnp));
-    lines.push(row(style, "Port mappings", unknown(checks.upnp.mapping_count, |n| n.to_string())));
-    lines.push(row(style, "Remote-access", unknown(checks.upnp.sensitive_count, |n| n.to_string())));
-    for m in &checks.upnp.mappings {
-        let flag = if m.sensitive { style.red("  remote-access service") } else { String::new() };
-        lines.push(format!("    {} {} → port {}{flag}", m.protocol, m.external_port, m.internal_port));
-    }
-
-    lines.push(String::new());
-    lines.push(style.bold("Wi-Fi"));
-    let wifi = &checks.wifi;
-    let speed = &wifi.speed;
-    lines.push(row(style, "Security", match &wifi.security_mode {
-        Some(mode) => format!("{mode} ({})", wifi.security.as_str()),
-        None => wifi.security.as_str().to_string(),
-    }));
-    lines.push(row(style, "Band", unknown(wifi.band, |b| b.as_str().to_string())));
-    lines.push(row(style, "Standard", unknown(speed.standard, |s| s.as_str().to_string())));
-    lines.push(row(style, "Link rate", unknown(speed.link_rate_mbps, |r| format!("{r} Mbps (a ceiling, not a speed test)"))));
-    lines.push(row(style, "Signal", unknown(speed.signal_dbm, |s| match speed.signal {
-        Some(q) => format!("{s} dBm ({})", q.as_str()),
-        None => format!("{s} dBm"),
-    })));
-    lines.push(row(style, "Channel width", unknown(speed.channel_width_mhz, |w| format!("{w} MHz"))));
-    lines.push(row(style, "Nearby networks", unknown(wifi.nearby_count, |n| n.to_string())));
-    lines.push(row(style, "Same channel", unknown(wifi.same_channel_count, |n| n.to_string())));
-    lines.push(row(style, "Overlapping", unknown(wifi.overlapping_count, |n| n.to_string())));
-    lines.push(row(style, "Noise floor", unknown(speed.noise_dbm, |n| format!("{n} dBm"))));
-
-    lines.push(String::new());
-    lines.push(style.bold("DNS"));
-    lines.push(row(style, "Encryption", checks.dns.status.as_str()));
-    lines.push(row(style, "Resolver", resolver(&checks.environment)));
-
-    lines.push(String::new());
-    lines.push(style.bold("This device"));
-    let env = &checks.environment;
-    lines.push(row(style, "Firewall", match env.firewall {
-        Firewall::On => "on",
-        Firewall::Off => "off",
-        Firewall::Unknown => "Unknown",
-    }));
-    lines.push(row(style, "Stealth mode", yes_no(env.stealth_mode)));
-    lines.push(row(style, "Open listeners", unknown(env.open_listener_count, |n| format!("at least {n}"))));
-    lines.push(row(style, "Global IPv6", yes_no(env.global_ipv6)));
-    lines.push(row(style, "VPN or tunnel", yes_no(env.tunnel_active)));
-    lines.push(row(style, "Private hardware ID", yes_no(env.private_hardware_address)));
-    lines.push(row(style, "IPv6 from hardware", yes_no(env.ipv6_from_hardware_address)));
-
-    let latency = &checks.latency;
-    lines.push(String::new());
-    lines.push(style.bold("ISP delay"));
-    if latency.requested {
-        lines.push(row(style, "Router", unknown(latency.router_ms, |m| format!("{m} ms"))));
-        lines.push(row(style, "First ISP router", unknown(latency.isp_ms, |m| format!("{m} ms"))));
-        lines.push(row(style, "Own routers", unknown(latency.own_hops, |n| n.to_string())));
-        lines.push(row(style, "Cable distance", unknown(latency.isp_max_km, |km| format!("no more than about {km} km"))));
-        lines.push(row(style, "Carrier-grade NAT", match latency.carrier_grade_nat {
-            Some(true) => "most likely".to_string(),
-            Some(false) => "probably not".to_string(),
-            None => "Unknown".to_string(),
-        }));
-    } else {
-        lines.push(style.dim("  Not measured (switched off). Remove --no-isp-latency to measure it."));
-    }
-    lines
-}
-
-/// The audit as sections: summary, findings, score breakdown, the details behind them, then what to do.
-pub fn format_report(report: &Report, style: &Style) -> String {
+/// A short summary of the audit: score, what needs attention, and what to do about it.
+pub fn format_report(report: &Report, style: &Style, speed: Option<&Option<SpeedTestResult>>) -> String {
     let mut lines = vec![
-        format!("{}  {}", style.bold("Peekaboo"), style.dim("home network privacy check")),
-        row(style, "Target", &report.target),
-        row(style, "Audited", when(&report.generated_at)),
-        row(style, "Platform", &report.platform),
+        format!("{}  {}", style.bold("Peekaboo"), style.dim(&format!("audited {}", when(&report.generated_at)))),
         String::new(),
     ];
-    for section in [summary_section(style, report), findings_section(style, report), breakdown_section(style, report), details_section(style, report)] {
-        lines.extend(section);
+    lines.extend(summary_section(style, report));
+    lines.push(String::new());
+    let connection = connection_section(style, report, speed);
+    if !connection.is_empty() {
+        lines.extend(connection);
         lines.push(String::new());
     }
-    if !report.top_fixes.is_empty() {
-        lines.push(style.heading("Top fixes"));
-        lines.extend(numbered(style, &report.top_fixes));
-        lines.push(String::new());
-    }
-    if !report.speed_tips.is_empty() {
-        lines.push(style.heading("Make the Wi-Fi faster"));
-        lines.extend(numbered(style, &report.speed_tips));
-        lines.push(String::new());
-    }
-    if !report.privacy.is_empty() {
-        lines.push(style.heading("Privacy"));
-        lines.extend(report.privacy.iter().flat_map(|p| wrap(p, WIDTH - 4, 2)).map(|l| format!("  {l}")));
-        lines.push(String::new());
-    }
-    lines.push(style.dim("Saved sanitized-report.json"));
+    lines.extend(findings_section(style, report));
+    lines.push(String::new());
+    lines.push(style.dim("Full detail: --output json, or the dashboard (peekaboo web)."));
     lines.join("\n")
+}
+
+/// The report as JSON, with the opt-in speed test beside it when one was run (`null` when it could not be read).
+/// The speed test is added to this output only; it is not part of the saved report.
+pub fn format_report_json_with_speed(report: &Report, speed: Option<&Option<SpeedTestResult>>) -> String {
+    let mut value = serde_json::to_value(report).unwrap_or_default();
+    if let (Some(result), Some(object)) = (speed, value.as_object_mut()) {
+        object.insert("speedTest".to_string(), serde_json::to_value(result).unwrap_or_default());
+    }
+    serde_json::to_string_pretty(&value).unwrap_or_else(|_| "{}".to_string())
+}
+
+/// The opt-in speed test as rows for the connection section. `Some(None)` means it was asked for but gave no reading.
+fn speed_rows(style: &Style, speed: Option<&Option<SpeedTestResult>>) -> Vec<String> {
+    let Some(result) = speed else { return Vec::new() };
+    let Some(r) = result else {
+        return vec![row(style, "Speed test", "Unknown (not available here or could not be read)")];
+    };
+    let mut rows = vec![row(style, "Download", style.bold(&format!("{} Mbps", r.download_mbps))), row(style, "Upload", style.bold(&format!("{} Mbps", r.upload_mbps)))];
+    if let Some(ms) = r.idle_latency_ms {
+        rows.push(row(style, "Idle latency", format!("{ms} ms")));
+    }
+    if let (Some(ms), Some(rpm)) = (r.loaded_latency_ms, r.responsiveness_rpm) {
+        let word = r.responsiveness().map_or(String::new(), |q| match q {
+            Responsiveness::High => style.green("high"),
+            Responsiveness::Medium => style.yellow("medium"),
+            Responsiveness::Low => style.red("low"),
+        });
+        rows.push(row(style, "Under load", format!("{ms} ms | {rpm} RPM ({word})")));
+    }
+    rows
+}
+
+/// The sanitized report exactly as it is saved, as JSON.
+pub fn format_report_json(report: &Report) -> String {
+    serde_json::to_string_pretty(report).unwrap_or_else(|_| "{}".to_string())
 }
 
 /// "2026-11-13T14:05:03.924Z" as "2026-11-13 14:05 UTC".
@@ -334,12 +283,14 @@ pub fn format_history(points: &[HistoryPoint], style: &Style) -> String {
         String::new(),
     ];
     type Measure = (&'static str, &'static str, fn(&HistoryPoint) -> Option<f64>);
-    let measures: [Measure; 5] = [
+    let measures: [Measure; 7] = [
         ("Score", "", |p| p.score.map(f64::from)),
         ("Link rate", " Mbps", |p| p.link_rate_mbps.map(f64::from)),
         ("Signal", " dBm", |p| p.signal_dbm.map(f64::from)),
         ("Router delay", " ms", |p| p.router_ms.map(f64::from)),
         ("ISP delay", " ms", |p| p.isp_ms.map(f64::from)),
+        ("Download", " Mbps", |p| p.download_mbps),
+        ("Upload", " Mbps", |p| p.upload_mbps),
     ];
     for (name, unit, pick) in measures {
         let values = series(shown, pick);
@@ -394,14 +345,18 @@ mod tests {
 
     #[test]
     fn refuses_targets_unknown_flags_bad_values_and_bad_names() {
-        for bad in [&["--target", "1.2.3.4"][..], &["192.168.1.1"], &["--dns"], &["--dns", "8.8.8.8"], &["--isp-latency=yes"], &["--no-isp-latency=1"], &["--save", "../x"], &["--save"]] {
+        for bad in [&["--target", "1.2.3.4"][..], &["192.168.1.1"], &["--dns"], &["--dns", "8.8.8.8"], &["--output", "xml"], &["--output"], &["--isp-latency=yes"], &["--no-isp-latency=1"], &["--save", "../x"], &["--save"]] {
             assert!(options_from_args(&args(bad), true).is_err(), "{bad:?}");
         }
         assert!(options_from_args(&args(&["--save", "Home"]), false).is_err(), "watch cannot save");
+        assert!(options_from_args(&args(&["--speed-test"]), false).is_err(), "watch cannot run a speed test");
+        assert!(options_from_args(&args(&["--speed-test=1"]), true).is_err());
+        assert!(options_from_args(&args(&["--speed-test"]), true).unwrap().speed_test);
+        assert!(!options_from_args(&[], true).unwrap().speed_test, "off unless asked");
     }
 
     fn point(at: &str, score: u32, link: Option<u32>) -> HistoryPoint {
-        HistoryPoint { at: at.into(), score: Some(score), coverage_percent: 59, link_rate_mbps: link, signal_dbm: Some(-50), router_ms: Some(5), isp_ms: None, band: None }
+        HistoryPoint { at: at.into(), score: Some(score), coverage_percent: 59, link_rate_mbps: link, signal_dbm: Some(-50), router_ms: Some(5), isp_ms: None, band: None, download_mbps: None, upload_mbps: None }
     }
 
     #[test]
@@ -421,15 +376,39 @@ mod tests {
     }
 
     #[test]
-    fn organizes_the_report_into_sections_without_colour_codes_when_plain() {
-        let text = format_report(&fixture(), &Style::plain());
-        println!("{text}");
+    fn summarizes_the_report_briefly_without_colour_codes_when_plain() {
+        let text = format_report(&fixture(), &Style::plain(), None);
         let at = |h: &str| text.find(&format!("\n{h}\n")).unwrap_or_else(|| panic!("missing {h}\n{text}"));
-        let order = ["Summary", "Findings", "Score breakdown", "Network details"].map(at);
-        assert!(order.windows(2).all(|w| w[0] < w[1]), "{text}");
+        let order = ["SUMMARY", "FINDINGS"].map(at);
+        assert!(order[0] < order[1], "{text}");
         assert!(!text.contains('\x1b'));
-        assert!(text.ends_with("Saved sanitized-report.json"));
+        assert!(!text.contains("Network details") && !text.contains("Score breakdown"));
+        assert!(text.lines().count() < 40, "{text}");
         assert!(text.lines().all(|l| l.chars().count() <= WIDTH + 12), "{text}");
+    }
+
+    #[test]
+    fn json_output_is_the_report_itself() {
+        let report = fixture();
+        let value: serde_json::Value = serde_json::from_str(&format_report_json(&report)).unwrap();
+        assert!(value.is_object() && value.get("score").is_some());
+    }
+
+    #[test]
+    fn shows_the_speed_test_inside_the_connection_section_and_adds_it_to_json_only_when_run() {
+        let result = crate::domain::speed_test::parse_speed_test(r#"{"dl_throughput":35055000,"ul_throughput":97578000,"base_rtt":11.38,"responsiveness":179}"#);
+        let report = fixture();
+        let text = format_report(&report, &Style::plain(), Some(&result));
+        for expected in ["Download        35.055 Mbps", "Upload          97.578 Mbps", "Idle latency    11.4 ms", "Under load      335.2 ms | 179 RPM (low)"] {
+            assert!(text.contains(expected), "{expected}\n{text}");
+        }
+        assert!(!text.contains("THROUGHPUT"), "one section, not two\n{text}");
+        assert_eq!(text.matches("CURRENT CONNECTION").count(), 1);
+        assert!(format_report(&report, &Style::plain(), Some(&None)).contains("Speed test"));
+        assert!(!format_report(&report, &Style::plain(), None).contains("Download"));
+        assert!(!format_report_json_with_speed(&report, None).contains("speedTest"));
+        assert!(format_report_json_with_speed(&report, Some(&result)).contains("\"downloadMbps\": 35.055"));
+        assert!(format_report_json_with_speed(&report, Some(&None)).contains("\"speedTest\": null"));
     }
 
     #[test]

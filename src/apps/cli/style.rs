@@ -50,9 +50,9 @@ impl Style {
         }
     }
 
-    /// A section heading with a rule under the width of the page.
+    /// A section heading in capitals with a dashed rule under the width of the page.
     pub fn heading(self, title: &str) -> String {
-        format!("{}\n{}", self.bold(&self.cyan(title)), self.dim(&"─".repeat(WIDTH)))
+        format!("{}\n{}", self.bold(&title.to_uppercase()), self.dim(&"-".repeat(WIDTH)))
     }
 
     /// A bar like `████████░░░░` for a 0–100 value, coloured by how good it is.

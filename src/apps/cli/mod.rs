@@ -28,9 +28,23 @@ pub fn scan(args: &[String]) -> i32 {
         let options = options_from_args(args, true)?;
         let app = create_app();
         let report = app.run_audit.execute(Some(options.dns.as_str()), AuditOptions { isp_latency: options.isp_latency })?;
-        println!("{}", format_report(&report, &Style::detect()));
+        // Opt-in, after the audit, and only printed: the result is never part of the saved report.
+        let speed = if options.speed_test {
+            if options.output == Output::Default {
+                eprintln!("Saturating the link to measure speed; this takes up to a minute...");
+            }
+            Some(app.run_speed_test.execute(&report.generated_at)?)
+        } else {
+            None
+        };
+        match options.output {
+            Output::Json => println!("{}", format_report_json_with_speed(&report, speed.as_ref())),
+            Output::Default => println!("{}", format_report(&report, &Style::detect(), speed.as_ref())),
+        }
         if let Some(name) = options.save {
-            println!("Saved as \"{}\"", app.saved_reports.save_current(Some(&name))?.label);
+            // Keep stdout clean JSON when asked for it.
+            let note = format!("Saved as \"{}\"", app.saved_reports.save_current(Some(&name))?.label);
+            if options.output == Output::Json { eprintln!("{note}") } else { println!("{note}") }
         }
         Ok(())
     })())
@@ -47,7 +61,10 @@ pub fn watch(args: &[String]) -> i32 {
         match app.run_audit.execute(Some(options.dns.as_str()), AuditOptions { isp_latency: options.isp_latency }) {
             Ok(report) => match session.observe(&report) {
                 Some(event) if event.kind == WatchKind::Baseline => {
-                    println!("{}", format_report(&report, &Style::detect()));
+                    match options.output {
+                        Output::Json => println!("{}", format_report_json(&report)),
+                        Output::Default => println!("{}", format_report(&report, &Style::detect(), None)),
+                    }
                     println!("\nWatching every {} minutes. Quiet unless something changes.", WATCH_INTERVAL_SECS / 60);
                 }
                 Some(event) => {

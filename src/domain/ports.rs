@@ -6,6 +6,7 @@ use super::gateway::DefaultRoute;
 use super::history::HistoryPoint;
 use super::model::Report;
 use super::saved::SavedReport;
+use super::speed_test::SpeedTestResult;
 use super::stability::DhcpLogObservation;
 
 pub trait GatewayLocator: Send + Sync {
@@ -80,4 +81,11 @@ pub trait HistoryStore: Send + Sync {
 pub trait Clock: Send + Sync {
     /// The current time as an ISO 8601 UTC string, such as "2026-11-13T14:05:03.924Z".
     fn now_iso(&self) -> String;
+}
+
+pub trait SpeedTester: Send + Sync {
+    /// Saturates this device's connection to measure throughput. It sends real traffic to a third-party server the
+    /// adapter fixes itself, so it is opt-in and must take no input, no address and no server name, and must return
+    /// numbers only. None when it cannot run.
+    fn run(&self) -> Option<SpeedTestResult>;
 }

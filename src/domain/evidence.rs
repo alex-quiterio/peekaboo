@@ -179,6 +179,7 @@ fn wifi_speed_from(observation: &WifiObservation) -> WifiSpeedCheck {
         noise_dbm: dbm(observation.noise_dbm),
         signal: signal_quality(signal_dbm),
         channel_width_mhz: observation.channel_width_mhz.filter(|w| CHANNEL_WIDTHS.contains(w)),
+        channel: observation.channel.filter(|c| (1..=233).contains(c)),
         standard: wifi_standard(observation.standard.as_deref()),
         dfs_channel: observation.channel.filter(|_| wifi_band(observation.channel, observation.frequency_mhz) == Some(WifiBand::Ghz5)).map(|c| (52..=144).contains(&c)),
     }

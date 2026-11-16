@@ -26,6 +26,7 @@ fn wifi_check(change: impl FnOnce(&mut WifiCheck)) -> WifiCheck {
             noise_dbm: Some(-92),
             signal: Some(SignalQuality::Excellent),
             channel_width_mhz: Some(80),
+            channel: Some(36),
             standard: Some(WifiStandard::Wifi5),
             dfs_channel: None,
         },

@@ -1,12 +1,13 @@
 //! A trend over time: one small point per audit, numbers only. A point holds no address, name or anything
 //! else that identifies a network; it is a few measurements and the time they were taken.
 use super::model::{Report, WifiBand};
+use super::speed_test::SpeedTestResult;
 use serde::{Deserialize, Serialize};
 
 /// The oldest points are dropped past this many.
 pub const MAX_HISTORY_POINTS: usize = 500;
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HistoryPoint {
     pub at: String,
@@ -17,6 +18,11 @@ pub struct HistoryPoint {
     pub router_ms: Option<u32>,
     pub isp_ms: Option<u32>,
     pub band: Option<WifiBand>,
+    /// Only when the opt-in speed test ran with this audit. Older points have none.
+    #[serde(default)]
+    pub download_mbps: Option<f64>,
+    #[serde(default)]
+    pub upload_mbps: Option<f64>,
 }
 
 pub fn point_from(report: &Report) -> HistoryPoint {
@@ -31,7 +37,18 @@ pub fn point_from(report: &Report) -> HistoryPoint {
         router_ms: latency.router_ms,
         isp_ms: latency.isp_ms,
         band: report.checks.wifi.band,
+        download_mbps: None,
+        upload_mbps: None,
     }
+}
+
+/// The points with the speed test figures added to the audit taken at `at`. Unchanged when there is no such point.
+pub fn with_speed(mut points: Vec<HistoryPoint>, at: &str, result: &SpeedTestResult) -> Vec<HistoryPoint> {
+    if let Some(point) = points.iter_mut().rev().find(|p| p.at == at) {
+        point.download_mbps = Some(result.download_mbps);
+        point.upload_mbps = Some(result.upload_mbps);
+    }
+    points
 }
 
 /// The points with `point` added at the end. A point with the same time replaces the old one, and the
@@ -80,7 +97,17 @@ mod tests {
     use super::*;
 
     fn point(at: &str, score: Option<u32>) -> HistoryPoint {
-        HistoryPoint { at: at.into(), score, coverage_percent: 50, link_rate_mbps: None, signal_dbm: None, router_ms: None, isp_ms: None, band: None }
+        HistoryPoint { at: at.into(), score, coverage_percent: 50, link_rate_mbps: None, signal_dbm: None, router_ms: None, isp_ms: None, band: None, download_mbps: None, upload_mbps: None }
+    }
+
+    #[test]
+    fn adds_speed_figures_to_the_matching_point_only() {
+        let result = crate::domain::speed_test::parse_speed_test(r#"{"dl_throughput":35055000,"ul_throughput":97578000}"#).unwrap();
+        let points = vec![point("a", Some(1)), point("b", Some(2))];
+        let updated = with_speed(points.clone(), "a", &result);
+        assert_eq!((updated[0].download_mbps, updated[0].upload_mbps), (Some(35.055), Some(97.578)));
+        assert_eq!(updated[1].download_mbps, None);
+        assert_eq!(with_speed(points.clone(), "zzz", &result), points);
     }
 
     #[test]
@@ -119,7 +146,7 @@ mod tests {
         let json = serde_json::to_string(&point("2026-01-01T00:00:00.000Z", Some(90))).unwrap();
         assert_eq!(
             json,
-            r#"{"at":"2026-01-01T00:00:00.000Z","score":90,"coveragePercent":50,"linkRateMbps":null,"signalDbm":null,"routerMs":null,"ispMs":null,"band":null}"#
+            r#"{"at":"2026-01-01T00:00:00.000Z","score":90,"coveragePercent":50,"linkRateMbps":null,"signalDbm":null,"routerMs":null,"ispMs":null,"band":null,"downloadMbps":null,"uploadMbps":null}"#
         );
     }
 }

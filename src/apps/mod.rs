@@ -8,9 +8,11 @@ Peekaboo: a read-only peek at what your home router and ISP can see.
 Run it only on a network you own or administer.
 
 USAGE
-  peekaboo scan [--dns encrypted|plaintext|unknown] [--no-isp-latency] [--save <name>]
-      One audit. About 20 seconds.
-  peekaboo watch [--dns ...] [--no-isp-latency]
+  peekaboo scan [--dns encrypted|plaintext|unknown] [--no-isp-latency] [--output default|json] [--speed-test] [--save <name>]
+      One audit, as a short summary (or the full sanitized report as JSON). About 20 seconds.
+      --speed-test also saturates your connection for up to a minute to measure download,
+      upload and delay under load (macOS only; it contacts Apple's servers, so it is opt-in).
+  peekaboo watch [--dns ...] [--no-isp-latency] [--output default|json]
       Re-audit every 30 minutes and print only what changed.
   peekaboo reports [save <name> | compare <name> [<other>] | delete <name>]
       List, keep, compare or delete saved reports.

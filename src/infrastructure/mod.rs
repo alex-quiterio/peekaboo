@@ -10,6 +10,7 @@ pub mod neighbours;
 pub mod network;
 pub mod paths;
 pub mod route;
+pub mod speed_test;
 pub mod system;
 pub mod upnp;
 pub mod wifi;
